@@ -1,0 +1,34 @@
+{
+	"name": "@aaronanderson/qoakus",
+	"version": "1.0.0",
+	"description": "Jackrabbit Oak Quarkus AWS Demo",
+	"module": "index.js",
+	"scripts": {
+		"type-check": "tsc --noEmit",
+		"type-check:watch": "npm run type-check -- --watch",
+		"start": "snowpack dev",
+		"build": "snowpack build"
+	},
+	"author": "Aaron Anderson",
+	"license": "Apache-2.0",
+	"dependencies": {
+		"@granite-elements/granite-lit-bootstrap": "^4.6.0-0",
+		"@vaadin/router": "^1.7.4",
+		"codemirror": "^5.61.0",
+		"idb": "^6.0.0",
+		"immer": "^8.0.1",
+		"lit": "^2.0.0-rc.2",
+		"redux": "^4.1.0",
+		"redux-thunk": "^2.3.0"
+	},
+	"devDependencies": {
+		"@snowpack/plugin-typescript": "^1.2.1",
+		"@types/codemirror": "^5.60.0",
+		"http-proxy": "^1.18.1",
+		"redux-devtools-extension": "^2.13.9",
+		"snowpack": "^3.3.7",
+		"tslib": "^2.2.0",
+		"typescript": "^4.2.4",
+		"typescript-lit-html-plugin": "^0.9.0"
+	}
+}
