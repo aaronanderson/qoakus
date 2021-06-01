@@ -14,7 +14,6 @@
 	"dependencies": {
 		"@granite-elements/granite-lit-bootstrap": "^4.6.0-0",
 		"@vaadin/router": "^1.7.4",
-		"codemirror": "^5.61.0",
 		"idb": "^6.0.0",
 		"immer": "^8.0.1",
 		"lit": "^2.0.0-rc.2",
