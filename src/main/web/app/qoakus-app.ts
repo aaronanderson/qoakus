@@ -4,7 +4,8 @@ import {html, css, LitElement} from 'lit';
 import {customElement, property} from 'lit/decorators.js';
 
 
-import '../features/content/main-page';
+import '../features/content/view-page';
+import '../features/content/edit-page';
 
 //@ts-ignore
 import {bootstrapStyles} from '@granite-elements/granite-lit-bootstrap/granite-lit-bootstrap.js';
@@ -21,11 +22,8 @@ export class AppElement extends LitElement {
       let mainContent: HTMLElement = this.shadowRoot.getElementById('main-content') as HTMLElement;
       let router = new Router(mainContent);
       router.setRoutes([
-        { path: '/', component: 'main-page' },
-		//{ path: '/edit', component: 'groovy-editor-page' },
-		//{ path: '/run', component: 'groovy-run-page' },
-      
-
+        { path: '/edit/(.*)', component: 'edit-page' },
+		{ path: '/(.*)', component: 'view-page' },
       ]);
 
 

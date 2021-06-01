@@ -1,0 +1,13 @@
+/* 
+https://jackrabbit.apache.org/jcr/node-types.html
+http://jackrabbit.apache.org/jcr/node-type-notation.html 
+*/
+
+<qo = 'https://github.com/aaronanderson/qoakus'>
+[qo:ContentType] > nt:base, qo:ContentType
+  mixin
+  - qo:title (string)
+    primary mandatory
+  + qo:content (qo:ContentType)
+    = qo:ContentType
+    multiple

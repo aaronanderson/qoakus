@@ -1,6 +1,6 @@
 import {
 	ContentState,
-	FETCH_SCRIPTS, FETCH_SCRIPTS_SUCCESS, FETCH_SCRIPTS_ERROR,
+	VIEW_CONTENT, VIEW_CONTENT_SUCCESS, VIEW_CONTENT_ERROR,
 } from './content-actions'
 
 import produce from 'immer'
@@ -8,6 +8,7 @@ import produce from 'immer'
 
 const initialState: ContentState = {
 	loading: false,
+	path: "/"
 
 
 }
@@ -16,17 +17,20 @@ const editor = (state: ContentState = initialState, action: any) => {
 	return produce(state, (draft: ContentState) => {
 
 		switch (action.type) {
-			case FETCH_SCRIPTS: {
+			case VIEW_CONTENT: {
 				draft.errorMessage = undefined;
 				draft.loading = true;
 				break
 			}
-			case FETCH_SCRIPTS_SUCCESS: {
+			case VIEW_CONTENT_SUCCESS: {
 				draft.errorMessage = undefined;
+				draft.parent = action.payload.parent;
+				draft.details = action.payload.details;
+				draft.children = action.payload.children;
 				draft.loading = false;
 				break
 			}
-			case FETCH_SCRIPTS_ERROR: {
+			case VIEW_CONTENT_ERROR: {
 				draft.errorMessage = action.payload.error;
 				draft.loading = false;
 				break

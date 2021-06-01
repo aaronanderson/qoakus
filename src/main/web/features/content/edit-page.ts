@@ -1,5 +1,5 @@
-import {LitElement, CSSResult, html, css} from 'lit';
-import {property, customElement} from 'lit/decorators.js';
+import { LitElement, CSSResult, html, css } from 'lit';
+import { property, customElement } from 'lit/decorators.js';
 
 import { ViewElement } from '../../components/view';
 
@@ -8,23 +8,12 @@ import { ContentStore } from '../../app/store';
 
 
 
-@customElement('main-page')
-export class MainPageElement extends ViewElement {
+@customElement('edit-page')
+export class EditPageElement extends ViewElement {
 
 	@property({ type: String })
-	pageTitle = 'Main';
+	pageTitle = 'Edit';
 
-	//@property({ type: Array })
-	//scripts: Array<Script> = [];
-	
-	@property({ type: Number })
-	selected?: number = -1;
-
-
-
-	firstUpdated() {
-		//this.dispatch(fetchScripts());		
-	}
 
 
 	render() {
@@ -35,7 +24,7 @@ export class MainPageElement extends ViewElement {
 			${this.loadingTemplate}
 			${this.errorTemplate}
 			<div class="container">
-				Main
+				Edit
 			</div>
 			
 			
@@ -44,7 +33,7 @@ export class MainPageElement extends ViewElement {
 	}
 
 
-	
+
 	stateChanged(state: ContentStore) {
 		if (state.content) {
 			this.loading = state.content.loading;
@@ -59,5 +48,5 @@ export class MainPageElement extends ViewElement {
 }
 
 
-export default MainPageElement;
+export default EditPageElement;
 

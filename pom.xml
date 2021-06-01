@@ -7,6 +7,7 @@
 
 	<properties>
 		<quarkus.version>2.0.0.CR2</quarkus.version>
+		<oak.version>1.38.0</oak.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<maven.compiler.source>16</maven.compiler.source>
 		<maven.compiler.target>16</maven.compiler.target>
@@ -30,22 +31,33 @@
 	<dependencies>
 
 
+		<!-- <dependency> <groupId>org.apache.jackrabbit</groupId> <artifactId>oak-run-elastic</artifactId> <version>${oak.version}</version> <exclusions> <exclusion> <groupId>com.google.guava</groupId> <artifactId>guava</artifactId> </exclusion> <exclusion> <groupId>org.elasticsearch</groupId> <artifactId>elasticsearch</artifactId> </exclusion> <exclusion> <groupId>org.apache.lucene</groupId> 
+			<artifactId>lucene-core</artifactId> </exclusion> <exclusion> <groupId>org.apache.jackrabbit</groupId> <artifactId>oak-lucene</artifactId> </exclusion> </exclusions> </dependency> -->
+
+
 		<dependency>
-			<groupId>org.apache.poi</groupId>
-			<artifactId>poi-ooxml</artifactId>
-			<version>5.0.0</version>
-			<exclusions>
-				<exclusion>
-					<groupId>xml-apis</groupId>
-					<artifactId>xml-apis-ext</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>xml-apis</groupId>
-					<artifactId>xml-apis</artifactId>
-				</exclusion>
-			</exclusions>
+			<groupId>org.apache.jackrabbit</groupId>
+			<artifactId>oak-jcr</artifactId>
+			<version>${oak.version}</version>
 		</dependency>
 
+		<dependency>
+			<groupId>org.apache.jackrabbit</groupId>
+			<artifactId>oak-segment-tar</artifactId>
+			<version>${oak.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.jackrabbit</groupId>
+			<artifactId>oak-segment-aws</artifactId>
+			<version>${oak.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.jackrabbit</groupId>
+			<artifactId>oak-search-elastic</artifactId>
+			<version>${oak.version}</version>
+		</dependency>
 
 		<dependency>
 			<groupId>io.quarkus</groupId>
@@ -63,18 +75,7 @@
 		</dependency>
 
 
-		<dependency>
-			<groupId>io.quarkus</groupId>
-			<artifactId>quarkus-junit5</artifactId>
-			<scope>test</scope>
-		</dependency>
-
-		<dependency>
-			<groupId>io.rest-assured</groupId>
-			<artifactId>rest-assured</artifactId>
-			<scope>test</scope>
-		</dependency>
-
+		<!-- <dependency> <groupId>io.quarkus</groupId> <artifactId>quarkus-junit5</artifactId> <scope>test</scope> </dependency> <dependency> <groupId>io.rest-assured</groupId> <artifactId>rest-assured</artifactId> <scope>test</scope> </dependency> -->
 
 	</dependencies>
 
