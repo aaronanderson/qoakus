@@ -14,9 +14,11 @@
 	"dependencies": {
 		"@granite-elements/granite-lit-bootstrap": "^4.6.0-0",
 		"@vaadin/router": "^1.7.4",
+		"easymde": "^2.15.0",
 		"idb": "^6.0.0",
 		"immer": "^8.0.1",
 		"lit": "^2.0.0-rc.2",
+		"marked": "^2.0.6",
 		"redux": "^4.1.0",
 		"redux-thunk": "^2.3.0"
 	},

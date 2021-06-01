@@ -95,22 +95,26 @@ public class RepositoryManager {
                 CndImporter.registerNodeTypes(new InputStreamReader(is), session);
 
                 Node root = session.getRootNode();
-                root.addMixin("qo:ContentType");
+                root.addMixin("qo:content");
                 root.setProperty("qo:title", "Main");
-                addFile(root, "md/main.md", "content.md", "ext/markdown", session);
+                addFile(root, "md/main.md", "content.md", "text/markdown", "main", session);
 
                 //String id =UUID.randomUUID().toString();
                 Node category = root.addNode(RandomStringUtils.random(10, true, true));
-                category.addMixin("qo:ContentType");
+                category.addMixin("qo:content");
                 category.setProperty("qo:title", "Java");
+                addFile(category, "md/java.md", "content.md", "text/markdown", "main", session);
+                //addFile(category, "md/java.pdf", "java.pdf", "application/pdf", "attachment", session);
 
                 category = root.addNode(RandomStringUtils.random(10, true, true));
-                category.addMixin("qo:ContentType");
+                category.addMixin("qo:content");
                 category.setProperty("qo:title", "JavaScript");
+                addFile(category, "md/javascript.md", "content.md", "text/markdown", "main", session);
 
                 category = root.addNode(RandomStringUtils.random(10, true, true));
-                category.addMixin("qo:ContentType");
+                category.addMixin("qo:content");
                 category.setProperty("qo:title", "CSS");
+                addFile(category, "md/css.md", "content.md", "text/markdown", "main", session);
 
                 session.save();
 
@@ -121,14 +125,17 @@ public class RepositoryManager {
         }
     }
 
-    private void addFile(Node folderNode, String resourcePath, String fileName, String mimeType, Session session) throws RepositoryException {
+    private void addFile(Node folderNode, String resourcePath, String fileName, String mimeType, String fileType, Session session) throws RepositoryException {
         Node fileNode = folderNode.addNode(fileName, JcrConstants.NT_FILE);
+        fileNode.addMixin("qo:fileType");
+        fileNode.setProperty("qo:fileType", fileType);
         //create the mandatory child node - jcr:content
         Node resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
         resNode.setProperty(JcrConstants.JCR_MIMETYPE, mimeType);
         //resNode.setProperty ("jcr:encoding", encoding);
-        ByteArrayInputStream bis = new ByteArrayInputStream("Contents".getBytes());
-        Binary contentValue = session.getValueFactory().createBinary(bis);
+        //ByteArrayInputStream bis = new ByteArrayInputStream("Contents".getBytes());
+        InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream(resourcePath);
+        Binary contentValue = session.getValueFactory().createBinary(is);
         resNode.setProperty(JcrConstants.JCR_DATA, contentValue);
         Calendar lastModified = Calendar.getInstance();
         //lastModified.setTimeInMillis(file.lastModified());

@@ -1,13 +1,22 @@
 /* 
 https://jackrabbit.apache.org/jcr/node-types.html
 http://jackrabbit.apache.org/jcr/node-type-notation.html 
+https://github.com/apache/jackrabbit/blob/trunk/jackrabbit-core/src/main/resources/org/apache/jackrabbit/core/nodetype/builtin_nodetypes.cnd
 */
 
 <qo = 'https://github.com/aaronanderson/qoakus'>
-[qo:ContentType] > nt:base, qo:ContentType
+[qo:content] > nt:base, qo:content
   mixin
   - qo:title (string)
     primary mandatory
-  + qo:content (qo:ContentType)
-    = qo:ContentType
+  + qo:content (qo:content)
+    = qo:content
     multiple
+
+
+[qo:fileType] > nt:file
+  mixin
+  - qo:fileType (string)
+  primary mandatory
+  
+  
