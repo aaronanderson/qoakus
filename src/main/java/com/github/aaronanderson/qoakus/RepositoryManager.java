@@ -104,7 +104,13 @@ public class RepositoryManager {
                 category.addMixin("qo:content");
                 category.setProperty("qo:title", "Java");
                 addFile(category, "md/java.md", "content.md", "text/markdown", "main", session);
-                //addFile(category, "md/java.pdf", "java.pdf", "application/pdf", "attachment", session);
+                //addFile(category, "md/java.pdf", "java.pdf", "application/pdf", "attachment", session);                
+
+                category = category.addNode(RandomStringUtils.random(10, true, true));
+                category.addMixin("qo:content");
+                category.setProperty("qo:title", "Quarkus");
+                addFile(category, "md/quarkus.md", "content.md", "text/markdown", "main", session);
+                System.out.format("Quarkus Identifier: %s\n", category.getIdentifier());
 
                 category = root.addNode(RandomStringUtils.random(10, true, true));
                 category.addMixin("qo:content");

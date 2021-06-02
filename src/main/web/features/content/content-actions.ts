@@ -14,6 +14,14 @@ export const SAVE_CONTENT = 'SAVE_CONTENT'
 export const SAVE_CONTENT_SUCCESS = 'SAVE_CONTENT_SUCCESS'
 export const SAVE_CONTENT_ERROR = 'SAVE_CONTENT_ERROR'
 
+export const FILE_UPLOAD = 'FILE_UPLOAD'
+export const FILE_UPLOAD_SUCCESS = 'FILE_UPLOAD_SUCCESS'
+export const FILE_UPLOAD_ERROR = 'FILE_UPLOAD_ERROR'
+
+export const FILE_DELETE = 'FILE_DELETE'
+export const FILE_DELETE_SUCCESS = 'FILE_DELETE_SUCCESS'
+export const FILE_DELETE_ERROR = 'FILE_DELETE_ERROR'
+
 
 export const DELETE_CONTENT = 'DELETE_CONTENT'
 export const DELETE_CONTENT_SUCCESS = 'DELETE_CONTENT_SUCCESS'
@@ -42,7 +50,8 @@ export const viewContent: any = (path: string) => async (dispatch: any) => {
 	dispatch({ type: VIEW_CONTENT });
 
 	try {
-		const contentResponse = await fetch(`/api/content${path}`, {
+		path = path == undefined ? "" : path;
+		const contentResponse = await fetch(`/api/content/${path}`, {
 			method: 'GET',
 			headers: {
 				'Accept': 'application/json',
@@ -72,7 +81,7 @@ export const newContent: any = (parent: Content) => async (dispatch: any) => {
 		parent: parent,
 		files: [],
 		children: [],
-		mainContent: new File([], "content.md", { type: "text/markdown", lastModified: new Date().getTime() })		
+		mainContent: new File([], "content.md", { type: "text/markdown", lastModified: new Date().getTime() })
 	}
 	dispatch({ type: NEW_CONTENT, payload: { contentDetails: newContentDetails, editMode: EditMode.add } });
 	Router.go("/edit");
@@ -158,6 +167,66 @@ export const deleteContent: any = (path: string) => async (dispatch: any) => {
 }
 
 
+export const fileUpload: any = (path: string, files: Array<File>) => async (dispatch: any, getState: any) => {
+	console.log("fileUpload", path, files);
+	dispatch({ type: FILE_UPLOAD });
+	path = path == "/" ? "" : path;
+	try {
+		//let details = new Blob([JSON.stringify(request)], { type: 'application/json' });
+		const formData = new FormData();
+		//formData.append('details', details, 'details.json');
+		for (let i = 0; i < files.length; i++) {
+			formData.append(`file${i + 1}`, files[i]);
+		}
+
+		const fileResponse = await fetch(`/api/content/file/${path}`, {
+			method: "POST",
+			headers: {
+				'Accept': 'application/json',
+			},
+			body: formData
+		});
+		const fileResult: FileUploadResult = await fileResponse.json();
+		if (fileResult.status == "error") {
+			throw Error(fileResult.message);
+		}
+		
+		const contentFiles = files.map((f: File) => <ContentFile>{
+			fileType: "attachment",
+			name: f.name,
+			mimeType: f.type,
+			lastModified: new Date(f.lastModified).toISOString()
+			
+		});
+		dispatch({ type: FILE_UPLOAD_SUCCESS, payload: { files: contentFiles } });
+	} catch (error) {
+		console.error('Error:', error);
+		dispatch({ type: FILE_UPLOAD_ERROR, payload: { error: error } })
+	}
+}
+
+
+export const fileDelete: any = (path: string, fileName: string) => async (dispatch: any, getState: any) => {
+	console.log("fileDelete", path, fileName);
+	dispatch({ type: FILE_DELETE });
+	path = path == "/" ? "" : path;
+	try {
+		const fileResponse = await fetch(`/api/content/file/${path}/${fileName}`, {
+			method: "DELETE",
+			headers: {
+				'Accept': 'application/json',
+			},
+		});
+		const fileResult: FileDeleteResult = await fileResponse.json();
+		if (fileResult.status == "error") {
+			throw Error(fileResult.message);
+		}
+		dispatch({ type: FILE_DELETE_SUCCESS, payload: { fileName: fileName } });
+	} catch (error) {
+		console.error('Error:', error);
+		dispatch({ type: FILE_DELETE_ERROR, payload: { error: error } })
+	}
+}
 
 
 
@@ -215,6 +284,16 @@ export interface SaveRequest {
 }
 
 export interface SaveResult {
+	status: string;
+	message?: string;
+}
+
+export interface FileUploadResult {
+	status: string;
+	message?: string;
+}
+
+export interface FileDeleteResult {
 	status: string;
 	message?: string;
 }

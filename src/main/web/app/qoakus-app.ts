@@ -1,6 +1,6 @@
 import { Router } from '@vaadin/router';
 
-import {html, css, LitElement} from 'lit';
+import {html, css, LitElement, CSSResult} from 'lit';
 import {customElement, property} from 'lit/decorators.js';
 
 
@@ -8,9 +8,27 @@ import '../features/content/view-page';
 import '../features/content/edit-page';
 
 //@ts-ignore
-import {bootstrapStyles} from '@granite-elements/granite-lit-bootstrap/granite-lit-bootstrap.js';
+import {bootstrapRebootCSS, bootstrapCSS} from '../components/bootstrap';
 
+export const constructableStylesheetsSupported = ('adoptedStyleSheets' in Document.prototype) && ('replace' in CSSStyleSheet.prototype);
+	
+export const styleLightDOM = (styles: CSSResult, styleID: string) => {
+	if (constructableStylesheetsSupported) {
+		(document as any).adoptedStyleSheets = !!(document as any).adoptedStyleSheets ? [...(document as any).adoptedStyleSheets, styles.styleSheet] : [styles.styleSheet];
+	} else {
+		if (!document.head.querySelector('#' + styleID)) {
+			const styleNode = document.createElement('style');
+			styleNode.id = styleID;
+			styleNode.innerHTML = styles.cssText;
+			document.head.appendChild(styleNode);
+		}
+	}	
+}
 
+//@font-face css can only be set at the document level.
+styleLightDOM((bootstrapRebootCSS as CSSResult), 'bootstrap-reboot');		
+styleLightDOM((bootstrapCSS as CSSResult), 'bootstrap');
+			
 @customElement('qoakus-app')
 export class AppElement extends LitElement {
 
@@ -34,14 +52,14 @@ export class AppElement extends LitElement {
 
 
   static get styles() {
-    return [bootstrapStyles];
+    return [bootstrapRebootCSS, bootstrapCSS];
   }
 
 
   render() {
     return html`
-	  <div class="jumbotron">
-	    <h1>Qoakus - Jackrabbit Oak, Quarkus, AWS Demo</h1>      
+	  <div class="bg-light p-5 rounded-lg m-3">
+	    <h1 class="display-4">Qoakus - Jackrabbit Oak, Quarkus, AWS Demo</h1>      
 	  </div>
       <main>
         <section class="main-content" id="main-content"></section>
@@ -63,5 +81,6 @@ export class AppElement extends LitElement {
 
 
 export default AppElement;
+
 
 

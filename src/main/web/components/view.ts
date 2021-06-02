@@ -7,7 +7,7 @@ import { connect, store, ContentStore } from '../app/store';
 import { Router } from '@vaadin/router';
 
 //@ts-ignore
-import {bootstrapStyles} from '@granite-elements/granite-lit-bootstrap/granite-lit-bootstrap.js';
+import {bootstrapRebootCSS, bootstrapCSS} from './bootstrap';
 
 export class ViewElement extends connect<ContentStore>(store)(LitElement) {
 
@@ -31,7 +31,7 @@ export class ViewElement extends connect<ContentStore>(store)(LitElement) {
 	//lwdc-section-row
 
 	static get styles() {
-	  return [bootstrapStyles];
+	  return [bootstrapRebootCSS, bootstrapCSS];
 	}
 
 	get pageTitleTemplate() {
@@ -61,10 +61,11 @@ export class ViewElement extends connect<ContentStore>(store)(LitElement) {
 	get loadingTemplate() {
 		if (this.loading) {
 			return html`<div class="container">
-							<div class="spinner-border" role="status">
-  								<span class="sr-only">Loading...</span>
+							<div class="spinner-border text-primary" role="status">
+	  							<span class="visually-hidden">Loading...</span>
 							</div>
-						</div>`;
+						</div>	
+			`;
 		}
 	}
 	

@@ -1,7 +1,10 @@
 import {
-	ContentState,
+	ContentState, ContentFile,
 	VIEW_CONTENT, VIEW_CONTENT_SUCCESS, VIEW_CONTENT_ERROR,
 	NEW_CONTENT, EDIT_CONTENT,
+	FILE_UPLOAD, FILE_UPLOAD_SUCCESS, FILE_UPLOAD_ERROR,
+	FILE_DELETE, FILE_DELETE_SUCCESS, FILE_DELETE_ERROR,
+	SAVE_CONTENT, SAVE_CONTENT_SUCCESS, SAVE_CONTENT_ERROR,
 	MAIN_CONTENT, MAIN_CONTENT_SUCCESS, MAIN_CONTENT_ERROR,
 } from './content-actions'
 
@@ -51,6 +54,65 @@ const editor = (state: ContentState = initialState, action: any) => {
 				draft.loading = true;
 				break
 			}
+
+			case SAVE_CONTENT: {
+				draft.errorMessage = undefined;
+				draft.loading = true;
+				break
+			}
+			case SAVE_CONTENT_SUCCESS: {
+				draft.errorMessage = undefined;
+				draft.contentDetails = action.payload.contentDetails;
+				draft.loading = false;
+				break
+			}
+			case SAVE_CONTENT_ERROR: {
+				draft.errorMessage = action.payload.error;
+				draft.loading = false;
+				break
+			}
+
+			case FILE_UPLOAD: {
+				draft.errorMessage = undefined;
+				draft.loading = true;
+				break
+			}
+			case FILE_UPLOAD_SUCCESS: {
+				draft.errorMessage = undefined;
+				if (draft.contentDetails && action.payload.files) {
+					console.log("file upload log", action.payload.files, draft.contentDetails.files.length);
+					draft.contentDetails.files = draft.contentDetails.files.concat(action.payload.files);
+					console.log("file upload log", action.payload.files, draft.contentDetails.files.length);
+				}
+				draft.loading = false;
+				break
+			}
+			case FILE_UPLOAD_ERROR: {
+				draft.errorMessage = action.payload.error;
+				draft.loading = false;
+				break
+			}
+
+			case FILE_DELETE: {
+				draft.errorMessage = undefined;
+				draft.loading = true;
+				break
+			}
+			case FILE_DELETE_SUCCESS: {
+				draft.errorMessage = undefined;
+				if (draft.contentDetails && action.payload.fileName) {
+					draft.contentDetails.files = draft.contentDetails.files.filter((f: ContentFile) => f.fileType != "attachment" || f.name != action.payload.fileName);
+				}
+				draft.loading = false;
+				break
+			}
+			case FILE_DELETE_ERROR: {
+				draft.errorMessage = action.payload.error;
+				draft.loading = false;
+				break
+			}
+
+
 			case MAIN_CONTENT_SUCCESS: {
 				draft.errorMessage = undefined;
 				if (draft.contentDetails) {

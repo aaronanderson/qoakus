@@ -12,8 +12,9 @@
 	"author": "Aaron Anderson",
 	"license": "Apache-2.0",
 	"dependencies": {
-		"@granite-elements/granite-lit-bootstrap": "^4.6.0-0",
 		"@vaadin/router": "^1.7.4",
+		"bootstrap": "^5.0.1",
+		"bootstrap-icons": "^1.5.0",
 		"easymde": "^2.15.0",
 		"idb": "^6.0.0",
 		"immer": "^8.0.1",

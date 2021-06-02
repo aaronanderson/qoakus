@@ -1,5 +1,6 @@
 package com.github.aaronanderson.qoakus;
 
+import java.io.InputStream;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -26,12 +27,17 @@ import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.core.GenericEntity;
 import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 
 import org.apache.jackrabbit.JcrConstants;
 import org.jboss.logging.Logger;
+import org.jboss.resteasy.annotations.providers.multipart.MultipartForm;
+import org.jboss.resteasy.plugins.providers.multipart.InputPart;
+import org.jboss.resteasy.plugins.providers.multipart.MultipartFormDataInput;
 
 @Path("/content")
 @RequestScoped
@@ -170,12 +176,11 @@ public class ContentRS {
             JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
         }
-
     }
 
     @GET
     @Path("/file{contentPath:.*}/{fileName}")
-    public Response file(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
+    public Response fileDownload(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
         try {
 
             Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
@@ -202,6 +207,85 @@ public class ContentRS {
             logger.error("", e);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(String.format("Content %s file %s retrieval error: %s", contentPath, fileName, e.getMessage())).build();
         }
+    }
+
+    @POST
+    @Path("/file{contentPath:.*}")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public Response fileUpload(@PathParam("contentPath") String contentPath, @MultipartForm MultipartFormDataInput input) {
+        try {
+            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            String path = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
+            Node node = session.getNode(path);
+            for (InputPart part : input.getParts()) {
+                String fileName = getFileName(part.getHeaders());
+                if (fileName != null) {
+                    Node fileNode = null;
+                    Node resNode = null;
+                    if (node.hasNode(fileName)) {
+                        fileNode = node.getNode(fileName);
+                        resNode = fileNode.getNode(JcrConstants.JCR_CONTENT);
+                        if (!fileNode.hasProperty("qo:fileType") || !"attachment".equals(fileNode.getProperty("qo:fileType").getString())) {
+                            String errMessage = String.format("Non-attachment file %s/%s exists, unable to update", contentPath, fileName);
+                            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(Json.createObjectBuilder().add("status", "error").add("message", errMessage).build()).build();
+                        }
+                    } else {
+                        fileNode = node.addNode(fileName, JcrConstants.NT_FILE);
+                        resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
+                    }
+                    fileNode.addMixin("qo:fileType");
+                    fileNode.setProperty("qo:fileType", "attachment");
+                    resNode.setProperty(JcrConstants.JCR_MIMETYPE, String.format("%s/%s", part.getMediaType().getType(), part.getMediaType().getSubtype()));
+                    InputStream is = part.getBody(InputStream.class, null);
+                    Binary contentValue = session.getValueFactory().createBinary(is);
+                    resNode.setProperty(JcrConstants.JCR_DATA, contentValue);
+                    Calendar lastModified = Calendar.getInstance();
+                    //lastModified.setTimeInMillis(file.lastModified());
+                    resNode.setProperty(JcrConstants.JCR_LASTMODIFIED, lastModified);
+                }
+            }
+            session.save();
+            return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok")).build();
+        } catch (Exception e) {
+            logger.error("", e);
+            JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
+        }
+    }
+
+    @DELETE
+    @Path("/file{contentPath:.*}/{fileName}")
+    public Response fileDelete(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
+        try {
+            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
+            Node node = session.getNode(contentPath);
+            Node fileNode = node.getNode(fileName);
+            fileNode.remove();
+            session.save();
+            return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok")).build();
+        } catch (Exception e) {
+            logger.error("", e);
+            JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
+        }
+
+    }
+
+    private String getFileName(MultivaluedMap<String, String> header) {
+
+        String[] contentDisposition = header.getFirst("Content-Disposition").split(";");
+
+        for (String filename : contentDisposition) {
+            if ((filename.trim().startsWith("filename"))) {
+
+                String[] name = filename.split("=");
+
+                String finalFileName = name[1].trim().replaceAll("\"", "");
+                return finalFileName;
+            }
+        }
+        return null;
     }
 
 }
