@@ -1,6 +1,7 @@
 import {
 	ContentState,
 	VIEW_CONTENT, VIEW_CONTENT_SUCCESS, VIEW_CONTENT_ERROR,
+	NEW_CONTENT, EDIT_CONTENT,
 	MAIN_CONTENT, MAIN_CONTENT_SUCCESS, MAIN_CONTENT_ERROR,
 } from './content-actions'
 
@@ -35,6 +36,16 @@ const editor = (state: ContentState = initialState, action: any) => {
 				break
 			}
 
+			case NEW_CONTENT: {
+				draft.contentDetails = action.payload.contentDetails;
+				draft.editMode = action.payload.editMode;
+				break
+			}
+
+			case EDIT_CONTENT: {
+				draft.editMode = action.payload.editMode;
+				break
+			}
 			case MAIN_CONTENT: {
 				draft.errorMessage = undefined;
 				draft.loading = true;

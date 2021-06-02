@@ -6,6 +6,20 @@ export const VIEW_CONTENT = 'VIEW_CONTENT'
 export const VIEW_CONTENT_SUCCESS = 'VIEW_CONTENT_SUCCESS'
 export const VIEW_CONTENT_ERROR = 'VIEW_CONTENT_ERROR'
 
+export const NEW_CONTENT = 'NEW_CONTENT'
+
+export const EDIT_CONTENT = 'EDIT_CONTENT'
+
+export const SAVE_CONTENT = 'SAVE_CONTENT'
+export const SAVE_CONTENT_SUCCESS = 'SAVE_CONTENT_SUCCESS'
+export const SAVE_CONTENT_ERROR = 'SAVE_CONTENT_ERROR'
+
+
+export const DELETE_CONTENT = 'DELETE_CONTENT'
+export const DELETE_CONTENT_SUCCESS = 'DELETE_CONTENT_SUCCESS'
+export const DELETE_CONTENT_ERROR = 'DELETE_CONTENT_ERROR'
+
+
 export const MAIN_CONTENT = 'MAIN_CONTENT'
 export const MAIN_CONTENT_SUCCESS = 'MAIN_CONTENT_SUCCESS'
 export const MAIN_CONTENT_ERROR = 'MAIN_CONTENT_ERROR'
@@ -18,6 +32,8 @@ export interface ContentState {
 
 	path: string;
 	contentDetails?: ContentDetails;
+	editMode?: EditMode;
+
 
 }
 
@@ -25,9 +41,8 @@ export const viewContent: any = (path: string) => async (dispatch: any) => {
 	console.log("viewContent", path);
 	dispatch({ type: VIEW_CONTENT });
 
-
 	try {
-		const contentResponse = await fetch(`/api/content/view${path}`, {
+		const contentResponse = await fetch(`/api/content${path}`, {
 			method: 'GET',
 			headers: {
 				'Accept': 'application/json',
@@ -48,6 +63,103 @@ export const viewContent: any = (path: string) => async (dispatch: any) => {
 		dispatch({ type: VIEW_CONTENT_ERROR, payload: { error: error } })
 	}
 }
+
+export const newContent: any = (parent: Content) => async (dispatch: any) => {
+	console.log("newContent", parent);
+	const newContentDetails = <ContentDetails>{
+		title: "",
+		path: "",
+		parent: parent,
+		files: [],
+		children: [],
+		mainContent: new File([], "content.md", { type: "text/markdown", lastModified: new Date().getTime() })		
+	}
+	dispatch({ type: NEW_CONTENT, payload: { contentDetails: newContentDetails, editMode: EditMode.add } });
+	Router.go("/edit");
+
+}
+
+
+export const editContent: any = () => async (dispatch: any) => {
+	dispatch({ type: EDIT_CONTENT, payload: { editMode: EditMode.update } });
+	Router.go("/edit");
+
+}
+
+
+export const saveContent: any = (details: ContentDetails) => async (dispatch: any, getState: any) => {
+	console.log("saveContent", details);
+	dispatch({ type: SAVE_CONTENT });
+
+	try {
+		const { editMode } = getState().contents;
+		let path = undefined;
+		let method = undefined;
+		if (editMode == EditMode.add && details.parent) {
+			path = details.parent.path;
+			method = "POST";
+		} else if (editMode == EditMode.update) {
+			path = details.path;
+			method = "PUT";
+		} else {
+			throw Error("Unsupported edit mode " + editMode);
+		}
+		const saveRequest = <SaveRequest>{
+			title: details.title
+		};
+		const contentResponse = await fetch(`/api/content/${path}`, {
+			method: method,
+			headers: {
+				'Accept': 'application/json',
+			},
+			body: JSON.stringify(saveRequest)
+		});
+		const saveResult: SaveResult = await contentResponse.json();
+		if (saveResult.status == "error") {
+			throw Error(saveResult.message);
+		}
+		let contentDetails: any = Object.assign({}, saveResult);
+		delete contentDetails.status;
+		delete contentDetails.message;
+
+		dispatch({ type: SAVE_CONTENT_SUCCESS, payload: { contentDetails: contentDetails } });
+		//dispatch(fetchMainContent(contentDetails));
+	} catch (error) {
+		console.error('Error:', error);
+		dispatch({ type: SAVE_CONTENT_ERROR, payload: { error: error } })
+	}
+}
+
+export const deleteContent: any = (path: string) => async (dispatch: any) => {
+	console.log("deleteContent", path);
+	dispatch({ type: DELETE_CONTENT });
+
+
+	try {
+		const contentResponse = await fetch(`/api/content/${path}`, {
+			method: 'DELETE',
+			headers: {
+				'Accept': 'application/json',
+			},
+		});
+		const deleteResult: DeleteResult = await contentResponse.json();
+		if (deleteResult.status == "error") {
+			throw Error(deleteResult.message);
+		}
+		dispatch({ type: DELETE_CONTENT_SUCCESS, payload: {} });
+		let len = path.lastIndexOf("/");
+		let redirect = len > 0 ? path.substring(0, len) : "/";
+		Router.go(redirect);
+
+	} catch (error) {
+		console.error('Error:', error);
+		dispatch({ type: DELETE_CONTENT_ERROR, payload: { error: error } })
+	}
+}
+
+
+
+
 
 
 export const fetchMainContent: any = (contentDetails: ContentDetails) => async (dispatch: any) => {
@@ -96,8 +208,20 @@ export const readFile = (file: File): Promise<string> => {
 export interface ViewResult {
 	status: string;
 	message?: string;
+}
 
+export interface SaveRequest {
+	title: string;
+}
 
+export interface SaveResult {
+	status: string;
+	message?: string;
+}
+
+export interface DeleteResult {
+	status: string;
+	message?: string;
 }
 
 
@@ -119,5 +243,10 @@ export interface ContentDetails extends Content {
 	files: Array<ContentFile>;
 	children: Array<Content>;
 	mainContent?: File;
+}
+
+export enum EditMode {
+	add = 'ADD',
+	update = 'UPDATE',
 }
 

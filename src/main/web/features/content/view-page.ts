@@ -6,7 +6,7 @@ import marked from 'marked';
 
 import { ViewElement } from '../../components/view';
 
-import { Content, ContentDetails, viewContent, readFile } from './content-actions';
+import { Content, ContentDetails, viewContent, newContent, editContent, deleteContent, readFile } from './content-actions';
 import { ContentStore } from '../../app/store';
 
 
@@ -22,7 +22,7 @@ export class ViewPageElement extends ViewElement {
 
 	onAfterEnter(location: RouterLocation, commands: EmptyCommands, router: Router) {
 		console.log("dispatch", location.pathname, commands);
-		this.dispatch(viewContent(location.pathname));
+		this.dispatch(viewContent(location.pathname.substring(5)));
 	}
 
 	render() {
@@ -35,7 +35,15 @@ export class ViewPageElement extends ViewElement {
 				${this.parentTemplate}
 				${this.detailsTemplate}
 				${this.childTemplate}
+				
+				<div class="btn-group" role="group" aria-label="Scripts">			  		
+					<button type="button" ?disabled=${!this.details} class="btn btn-primary mr-2" @click=${(e: MouseEvent)=> this.dispatch(newContent(this.details?.parent))}>New</button>
+					<button type="button" ?disabled=${!this.details} class="btn btn-secondary mr-2" @click=${(e: MouseEvent)=> this.dispatch(editContent())}>Edit</button>
+					<button type="button" ?disabled=${!this.details || this.details.path =="/"} class="btn btn-danger mr-4" @click=${(e: MouseEvent)=> this.dispatch(deleteContent(this.details?.path))}>Delete</button>
+				</div>
 			</div>
+			
+			
     `;
 	}
 
@@ -45,7 +53,7 @@ export class ViewPageElement extends ViewElement {
 			<span>Parent</span>
 			<ul class="nav flex-column">
 				<li class="nav-item">
-					<a class="nav-link" href="${this.details.parent.path}">${this.details.parent.title}</a>
+					<a class="nav-link" href="/view${this.details.parent.path}">${this.details.parent.title}</a>
 				</li>
 			</ul>
 			`;
@@ -72,7 +80,7 @@ export class ViewPageElement extends ViewElement {
 				<span>Children</span>
 				<ul class="nav flex-column">
 					${this.details.children.map((c: Content) => html`<li class="nav-item">
-						<a class="nav-link" href="${c.path}">${c.title}</a>
+						<a class="nav-link" href="/view${c.path}">${c.title}</a>
 					</li>`)}
 				</ul>
 			

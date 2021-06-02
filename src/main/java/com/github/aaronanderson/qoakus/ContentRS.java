@@ -15,12 +15,14 @@ import javax.jcr.Repository;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
 import javax.json.Json;
-import javax.json.JsonArray;
 import javax.json.JsonArrayBuilder;
 import javax.json.JsonObject;
 import javax.json.JsonObjectBuilder;
 import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -73,16 +75,23 @@ public class ContentRS {
         }
     }*/
 
+    //not sure why two different resources are needed. Couldn't get a single regexp to work.
     @GET
-    @Path("view{contentPath:.*}")
+    @Path("/")
+    public Response rootViewContent(@PathParam("contentPath") String contentPath) {
+        return viewContent("");
+    }
+
+    @GET
+    @Path("/{contentPath:.*}")
     public Response viewContent(@PathParam("contentPath") String contentPath) {
         try {
             JsonObjectBuilder result = Json.createObjectBuilder();
             JsonArrayBuilder files = Json.createArrayBuilder();
             JsonArrayBuilder children = Json.createArrayBuilder();
+            contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
 
             Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
-            contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
             Node node = session.getNode(contentPath);
 
             if (contentPath.length() > 1) {
@@ -132,8 +141,40 @@ public class ContentRS {
         }
     }
 
+    @POST
+    @Path("{contentPath:.*}")
+    public Response newContent(@PathParam("contentPath") String contentPath) {
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+
+    }
+
+    @PUT
+    @Path("{contentPath:.*}")
+    public Response editContent(@PathParam("contentPath") String contentPath) {
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+
+    }
+
+    @DELETE
+    @Path("{contentPath:.*}")
+    public Response deleteContent(@PathParam("contentPath") String contentPath) {
+        try {
+            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
+            Node node = session.getNode(contentPath);
+            node.remove();
+            session.save();
+            return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok")).build();
+        } catch (Exception e) {
+            logger.error("", e);
+            JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
+        }
+
+    }
+
     @GET
-    @Path("file{contentPath:.*}/{fileName}")
+    @Path("/file{contentPath:.*}/{fileName}")
     public Response file(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
         try {
 

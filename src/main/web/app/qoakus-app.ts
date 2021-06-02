@@ -22,8 +22,9 @@ export class AppElement extends LitElement {
       let mainContent: HTMLElement = this.shadowRoot.getElementById('main-content') as HTMLElement;
       let router = new Router(mainContent);
       router.setRoutes([
-        { path: '/edit/(.*)', component: 'edit-page' },
-		{ path: '/(.*)', component: 'view-page' },
+        { path: '/', redirect: '/view/' },
+		{ path: '/edit', component: 'edit-page' },
+		{ path: '/view/(.*)', component: 'view-page' },
       ]);
 
 
