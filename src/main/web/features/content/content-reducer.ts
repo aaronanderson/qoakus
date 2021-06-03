@@ -80,9 +80,7 @@ const editor = (state: ContentState = initialState, action: any) => {
 			case FILE_UPLOAD_SUCCESS: {
 				draft.errorMessage = undefined;
 				if (draft.contentDetails && action.payload.files) {
-					console.log("file upload log", action.payload.files, draft.contentDetails.files.length);
 					draft.contentDetails.files = draft.contentDetails.files.concat(action.payload.files);
-					console.log("file upload log", action.payload.files, draft.contentDetails.files.length);
 				}
 				draft.loading = false;
 				break
@@ -101,7 +99,7 @@ const editor = (state: ContentState = initialState, action: any) => {
 			case FILE_DELETE_SUCCESS: {
 				draft.errorMessage = undefined;
 				if (draft.contentDetails && action.payload.fileName) {
-					draft.contentDetails.files = draft.contentDetails.files.filter((f: ContentFile) => f.fileType != "attachment" || f.name != action.payload.fileName);
+					draft.contentDetails.files = draft.contentDetails.files.filter((f: ContentFile) => f.name != action.payload.fileName);
 				}
 				draft.loading = false;
 				break

@@ -111,7 +111,7 @@ public class RepositoryManager {
                 category.setProperty("qo:title", "Quarkus");
                 addFile(category, "md/quarkus.md", "content.md", "text/markdown", "main", session);
                 addFile(category, "md/quarkus.pdf", "quarkus.pdf", "application/pdf", "attachment", session);
-                addFile(category, "md/quarkus.jpg", "quarkus.jpg", "image/jpg", "attachment", session);
+                addFile(category, "md/quarkus.jpg", "quarkus.jpg", "image/jpg", "image", session);
 
                 category = root.addNode(RandomStringUtils.random(10, true, true));
                 category.addMixin("qo:content");

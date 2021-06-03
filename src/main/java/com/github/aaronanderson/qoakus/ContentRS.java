@@ -21,13 +21,14 @@ import javax.json.JsonObject;
 import javax.json.JsonObjectBuilder;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
+import javax.ws.rs.DefaultValue;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
-import javax.ws.rs.core.GenericEntity;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
@@ -212,7 +213,7 @@ public class ContentRS {
     @POST
     @Path("/file{contentPath:.*}")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
-    public Response fileUpload(@PathParam("contentPath") String contentPath, @MultipartForm MultipartFormDataInput input) {
+    public Response fileUpload(@PathParam("contentPath") String contentPath, @MultipartForm MultipartFormDataInput input, @DefaultValue("attachment") @QueryParam("type") String fileType) {
         try {
             Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
             String path = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
@@ -225,8 +226,9 @@ public class ContentRS {
                     if (node.hasNode(fileName)) {
                         fileNode = node.getNode(fileName);
                         resNode = fileNode.getNode(JcrConstants.JCR_CONTENT);
-                        if (!fileNode.hasProperty("qo:fileType") || !"attachment".equals(fileNode.getProperty("qo:fileType").getString())) {
-                            String errMessage = String.format("Non-attachment file %s/%s exists, unable to update", contentPath, fileName);
+                        String currentFileType = fileNode.hasProperty("qo:fileType") ? fileNode.getProperty("qo:fileType").getString() : "";
+                        if (!fileType.equals(currentFileType)) {
+                            String errMessage = String.format("File %s/%s exists but the file types mismatch, %s - %s,  unable to update", contentPath, fileName, currentFileType, fileType);
                             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(Json.createObjectBuilder().add("status", "error").add("message", errMessage).build()).build();
                         }
                     } else {
@@ -234,7 +236,7 @@ public class ContentRS {
                         resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
                     }
                     fileNode.addMixin("qo:fileType");
-                    fileNode.setProperty("qo:fileType", "attachment");
+                    fileNode.setProperty("qo:fileType", fileType);
                     resNode.setProperty(JcrConstants.JCR_MIMETYPE, String.format("%s/%s", part.getMediaType().getType(), part.getMediaType().getSubtype()));
                     InputStream is = part.getBody(InputStream.class, null);
                     Binary contentValue = session.getValueFactory().createBinary(is);
@@ -245,8 +247,50 @@ public class ContentRS {
                 }
             }
             session.save();
-            return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok")).build();
+            return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok").build()).build();
         } catch (Exception e) {
+            logger.error("", e);
+            JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
+        }
+    }
+
+    @POST
+    @Path("/file/marked{contentPath:.*}")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public Response fileMarkedUpload(@PathParam("contentPath") String contentPath, @MultipartForm MultipartFormDataInput input) {
+        try {
+            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            String path = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
+            Node node = session.getNode(path);
+            InputPart part = input.getParts().get(0);
+
+            String fileName = getFileName(part.getHeaders());
+            if (fileName == null || fileName.startsWith("image.")) {
+                int fileCount = 0;
+                do {
+                    fileName = String.format("image_%d.%s", ++fileCount, part.getMediaType().getSubtype());
+                } while (node.hasNode(fileName));
+            }
+
+            Node fileNode = node.addNode(fileName, JcrConstants.NT_FILE);
+            Node resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
+
+            fileNode.addMixin("qo:fileType");
+            fileNode.setProperty("qo:fileType", "image");
+            resNode.setProperty(JcrConstants.JCR_MIMETYPE, String.format("%s/%s", part.getMediaType().getType(), part.getMediaType().getSubtype()));
+            InputStream is = part.getBody(InputStream.class, null);
+            Binary contentValue = session.getValueFactory().createBinary(is);
+            resNode.setProperty(JcrConstants.JCR_DATA, contentValue);
+            Calendar lastModified = Calendar.getInstance();
+            //lastModified.setTimeInMillis(file.lastModified());
+            resNode.setProperty(JcrConstants.JCR_LASTMODIFIED, lastModified);
+
+            session.save();
+            return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok").add("fileName", fileName).build()).build();
+        } catch (
+
+        Exception e) {
             logger.error("", e);
             JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();

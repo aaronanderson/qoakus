@@ -6,7 +6,7 @@ import { ViewElement } from '../../components/view';
 import {biFilePlusSVG, biFileMinusSVG} from '../../components/bootstrap';
 
 import { ContentStore } from '../../app/store';
-import {ContentDetails, ContentFile, EditMode, saveContent, readFile, fileUpload, fileDelete  } from './content-actions';
+import {ContentDetails, ContentFile, EditMode, saveContent, readFile, fileUpload, fileDelete, markedRenderer, imageUpload  } from './content-actions';
 
 import EasyMDE from 'easymde';
 import CodeMirror, {
@@ -51,7 +51,9 @@ export class EditPageElement extends ViewElement {
 	@query('form')
 	formElement?: HTMLFormElement;
 	
-	easyMDE?: EasyMDE; 
+	easyMDE?: EasyMDE;
+	
+	fileType?: string; 
 	
 	static get styles() {
 	  return [super.styles,editorCSS, easymdeCSS, css `
@@ -72,7 +74,14 @@ export class EditPageElement extends ViewElement {
 	
 	firstUpdated(){
 		//let EasyMDE add the fontawesome stylesheet to the document head for the @font-face reference. Also include fontawesome inline so that it gets added to the shadowDOM. 
-		this.easyMDE = new EasyMDE({element: this.contentsElement, autoDownloadFontAwesome: true});
+		//pass a custom image upload function so Lit can be refreshed on completion and a custom image relative path can be returned.
+		let imageUploadFunction = (file: File, onSuccess: Function, onError: Function)=> this.dispatch(imageUpload(file, onSuccess, onError, this.details?.path));
+		this.easyMDE = new EasyMDE({element: this.contentsElement, 
+									autoDownloadFontAwesome: true, 
+									uploadImage: true, 
+									imageUploadFunction: imageUploadFunction, 
+									renderingConfig: {markedOptions: {renderer: markedRenderer(this.details?.path)}}
+							});
 		if (this.details && this.details.mainContent){
 			readFile(this.details.mainContent).then((text: string) => {
 					this.easyMDE?.value(text);
@@ -83,6 +92,7 @@ export class EditPageElement extends ViewElement {
 		
 		
 		this.easyMDE.codemirror.on("changes", (e: Editor, c: Array<EditorChange>) => {
+			console.log("MD changes", c);
 			if (c.find((c: any) => c.origin != "setValue")){
 				this.modified = true;
 			}			 
@@ -121,7 +131,8 @@ export class EditPageElement extends ViewElement {
 					 
 				</form>
 				
-				${this.filesTemplate}
+				${this.filesTemplate("Images","image")}
+				${this.filesTemplate("Files","attachment")}
 					
 				<div class="btn-group my-5" role="group" aria-label="Run">			  		
 					<button ?disabled=${!this.modified || this.hasErrors } type="button" class="btn btn-primary m-2" @click=${this.handleSave}>Save</button>
@@ -134,7 +145,7 @@ export class EditPageElement extends ViewElement {
     `;
 	}
 	
-	get filesTemplate(){
+	filesTemplate(title: string, fileType: string){
 		if (this.details && this.editMode == EditMode.update){
 			let path = this.details?.path;
 			path = path == "/"? "" : path;
@@ -142,10 +153,10 @@ export class EditPageElement extends ViewElement {
 			return html `
 			<div class="container">
 					<div class="row w-50 my-3">
-					    <div class="col lead">Files</div>
-					    <div class="col" @click=${(e: MouseEvent)=> this.handleFileAdd()}>${biFilePlusSVG}</div>						   
+					    <div class="col lead">${title}</div>
+					    <div class="col" @click=${(e: MouseEvent)=> this.handleFileAdd(fileType)}>${biFilePlusSVG}</div>						   
 					</div>
-					${this.details.files.filter((c: ContentFile) => c.fileType =="attachment").map((c: ContentFile) => html `
+					${this.details.files.filter((c: ContentFile) => c.fileType ==fileType).map((c: ContentFile) => html `
 					<div class="row w-50 my-3">
 					    <div class="col"><a class="nav-link" download href="/api/content/file${path}/${c.name}">${c.name}</a></div>
 					    <div class="col"  @click=${(e: MouseEvent)=> this.handleFileRemove(c)}>${biFileMinusSVG}</div>						   
@@ -161,7 +172,8 @@ export class EditPageElement extends ViewElement {
 	
 	
 	
-	handleFileAdd(){		
+	handleFileAdd(fileType: string){
+		this.fileType= fileType;		
 		console.log("Add");
 		if (this.fileInputElement) {
 			this.fileInputElement.click();
@@ -172,8 +184,9 @@ export class EditPageElement extends ViewElement {
 		if (this.fileInputElement && this.fileInputElement.files && this.details){
 			const files = Array.from(this.fileInputElement.files);
 			console.log("Selected", files);	
-			this.dispatch(fileUpload(this.details.path, files));
+			this.dispatch(fileUpload(this.fileType, this.details.path, files));
 		}
+		this.fileType = undefined;
 	}
 	
 	handleFileRemove(c: ContentFile){		

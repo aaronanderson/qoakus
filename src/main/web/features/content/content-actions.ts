@@ -2,6 +2,8 @@ import { Router } from '@vaadin/router';
 
 import { qoakusDB } from '../../app/store';
 
+import marked from 'marked';
+
 export const VIEW_CONTENT = 'VIEW_CONTENT'
 export const VIEW_CONTENT_SUCCESS = 'VIEW_CONTENT_SUCCESS'
 export const VIEW_CONTENT_ERROR = 'VIEW_CONTENT_ERROR'
@@ -167,7 +169,7 @@ export const deleteContent: any = (path: string) => async (dispatch: any) => {
 }
 
 
-export const fileUpload: any = (path: string, files: Array<File>) => async (dispatch: any, getState: any) => {
+export const fileUpload: any = (fileType: string, path: string, files: Array<File>) => async (dispatch: any, getState: any) => {
 	console.log("fileUpload", path, files);
 	dispatch({ type: FILE_UPLOAD });
 	path = path == "/" ? "" : path;
@@ -179,7 +181,7 @@ export const fileUpload: any = (path: string, files: Array<File>) => async (disp
 			formData.append(`file${i + 1}`, files[i]);
 		}
 
-		const fileResponse = await fetch(`/api/content/file/${path}`, {
+		const fileResponse = await fetch(`/api/content/file${path}?type=${fileType}`, {
 			method: "POST",
 			headers: {
 				'Accept': 'application/json',
@@ -190,18 +192,58 @@ export const fileUpload: any = (path: string, files: Array<File>) => async (disp
 		if (fileResult.status == "error") {
 			throw Error(fileResult.message);
 		}
-		
+
 		const contentFiles = files.map((f: File) => <ContentFile>{
-			fileType: "attachment",
+			fileType: fileType,
 			name: f.name,
 			mimeType: f.type,
 			lastModified: new Date(f.lastModified).toISOString()
-			
+
 		});
 		dispatch({ type: FILE_UPLOAD_SUCCESS, payload: { files: contentFiles } });
 	} catch (error) {
 		console.error('Error:', error);
 		dispatch({ type: FILE_UPLOAD_ERROR, payload: { error: error } })
+	}
+}
+
+export const imageUpload: any = (file: File, onSuccess: Function, onError: Function, path: string) => async (dispatch: any, getState: any) => {
+	dispatch({ type: FILE_UPLOAD });
+	try {
+		path = path == "/" ? "" : path;
+		const formData = new FormData();
+		formData.append(`file1`, file);
+
+		if (!file.type.startsWith("image")) {
+			throw Error(`unsupported image format ${file.type}`);
+		}
+
+
+		const fileResponse = await fetch(`/api/content/file/marked/${path}`, {
+			method: "POST",
+			headers: {
+				'Accept': 'application/json',
+			},
+			body: formData
+		});
+		const fileResult: ImageFileUploadResult = await fileResponse.json();
+		if (fileResult.status == "error") {
+			throw Error(fileResult.message);
+		}
+		const fileName = fileResult.fileName;
+		const contentFile = <ContentFile>{
+			fileType: "image",
+			name: fileName,
+			mimeType: file.type,
+			lastModified: new Date(file.lastModified).toISOString()
+
+		};
+		dispatch({ type: FILE_UPLOAD_SUCCESS, payload: { files: [contentFile] } });
+		onSuccess.call(this, fileName);
+	} catch (error) {
+		console.error('Error:', error);
+		dispatch({ type: FILE_UPLOAD_ERROR, payload: { error: error } })
+		onError.call(this, error);
 	}
 }
 
@@ -211,7 +253,7 @@ export const fileDelete: any = (path: string, fileName: string) => async (dispat
 	dispatch({ type: FILE_DELETE });
 	path = path == "/" ? "" : path;
 	try {
-		const fileResponse = await fetch(`/api/content/file/${path}/${fileName}`, {
+		const fileResponse = await fetch(`/api/content/file${path}/${fileName}`, {
 			method: "DELETE",
 			headers: {
 				'Accept': 'application/json',
@@ -274,6 +316,50 @@ export const readFile = (file: File): Promise<string> => {
 };
 
 
+export const markedRenderer = (basePath?: string) => {
+	const renderer = new marked.Renderer();
+	let baseUrl = "";
+	if (basePath) {
+		baseUrl = `/api/content/file${basePath}/`;
+	}
+
+
+	const originalRendererLink = renderer.link.bind(renderer);
+	const originalRendererImage = renderer.image.bind(renderer);
+	const regularExpressionForURL = /^https?:\/\//i;
+	renderer.link = (href: string, title: string, text: string) => {
+		if (href && !regularExpressionForURL.test(href)) {
+			href = baseUrl + href;
+		}
+		return `<a href="${href}" target="_blank">${text}</a>`;
+		//return originalRendererLink(href, title, text);
+	};
+
+	renderer.image = (href: string, title: string, text: string) => {
+		console.log("marked image", href, title, text);
+		if (href && !regularExpressionForURL.test(href)) {
+			href = baseUrl + href;
+			//https://github.com/markedjs/marked/issues/339#issuecomment-479347433
+			const exec = /=\s*(\d*)\s*x\s*(\d*)\s*$/.exec(title);
+			const sanitize = (str: string) => {
+				return str.replace(/&<"/g, (m) => {
+					if (m === "&") return "&amp;"
+					if (m === "<") return "&lt;"
+					return "&quot;"
+				})
+			};
+			let res = '<img src="' + sanitize(href) + '" alt="' + sanitize(text)
+			if (exec && exec[1]) res += '" height="' + exec[1]
+			if (exec && exec[2]) res += '" width="' + exec[2]
+			return res + '">'
+		}
+		return originalRendererImage(href, title, text);
+	};
+
+	return renderer;
+}
+
+
 export interface ViewResult {
 	status: string;
 	message?: string;
@@ -291,6 +377,12 @@ export interface SaveResult {
 export interface FileUploadResult {
 	status: string;
 	message?: string;
+}
+
+export interface ImageFileUploadResult {
+	status: string;
+	message?: string;
+	fileName: string;
 }
 
 export interface FileDeleteResult {

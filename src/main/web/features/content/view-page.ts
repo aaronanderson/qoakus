@@ -6,7 +6,7 @@ import marked from 'marked';
 
 import { ViewElement } from '../../components/view';
 
-import { Content, ContentDetails, ContentFile, viewContent, newContent, editContent, deleteContent, readFile } from './content-actions';
+import { Content, ContentDetails, ContentFile, viewContent, newContent, editContent, deleteContent, readFile, markedRenderer } from './content-actions';
 import { ContentStore } from '../../app/store';
 
 
@@ -65,53 +65,13 @@ export class ViewPageElement extends ViewElement {
 			const div = document.createElement('div');
 			div.classList.add("container");
 			readFile(this.details.mainContent).then((text: string) =>
-				div.innerHTML = marked(text, <marked.MarkedOptions>{renderer: this.renderer})
+			
+				div.innerHTML = marked(text, <marked.MarkedOptions>{renderer: markedRenderer(this.details?.path)})
 			);
 
 			return html
 				`<hr class="my-5" />${div}<hr class="my-5" />`;
 		}
-	}
-	
-	get renderer(){
-		const renderer = new marked.Renderer();
-		let baseUrl = "";
-		if (this.details){
-			baseUrl = `/api/content/file${this.details.path}/`;
-		}
-		
-
-		const originalRendererLink = renderer.link.bind(renderer);
-		const originalRendererImage = renderer.image.bind(renderer);
-		const regularExpressionForURL = /^https?:\/\//i;
-		renderer.link = (href, title, text) => {				
-			if (href && !regularExpressionForURL.test(href)) {
-			href = baseUrl + href;		
-			}
-			return `<a href="${href}" target="_blank">${text}</a>`;					
-  			//return originalRendererLink(href, title, text);
-		};
-
-		renderer.image = (href, title, text) => {		  
-			if (title && href && !regularExpressionForURL.test(href)) {
-				href = baseUrl + href;
-				//https://github.com/markedjs/marked/issues/339#issuecomment-479347433
-		  		const exec = /=\s*(\d*)\s*x\s*(\d*)\s*$/.exec(title);
-				 const sanitize = (str: string)=> {
-		  			return str.replace(/&<"/g, (m)=> {
-		    		if (m === "&") return "&amp;"
-		    		if (m === "<") return "&lt;"
-		    		return "&quot;"
-		  		})
-				};
-   	  		    let res = '<img src="' + sanitize(href) + '" alt="' + sanitize(text)
-		  		if (exec && exec[1]) res += '" height="' + exec[1]
-		  		if (exec && exec[2]) res += '" width="' + exec[2]
-		  		return res + '">'
-			}	
-		  	return originalRendererImage(href, title, text);
-		};
-		return renderer;
 	}
 	
 	
