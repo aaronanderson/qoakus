@@ -50,7 +50,7 @@ export const viewContent: any = (path: string) => async (dispatch: any) => {
 	dispatch({ type: VIEW_CONTENT });
 
 	try {
-		path = path == undefined ? "" : path;
+		path = path == "/" ? "" : path;
 		const contentResponse = await fetch(`/api/content/${path}`, {
 			method: 'GET',
 			headers: {

@@ -6,13 +6,18 @@ import { ViewElement } from '../../components/view';
 import {biFilePlusSVG, biFileMinusSVG} from '../../components/bootstrap';
 
 import { ContentStore } from '../../app/store';
-import {ContentDetails, ContentFile, EditMode, saveContent, fileUpload, fileDelete  } from './content-actions';
+import {ContentDetails, ContentFile, EditMode, saveContent, readFile, fileUpload, fileDelete  } from './content-actions';
 
-//import 'easymde/dist/easymde.min.js';
-//import EasyMDE from 'easymde';
-//import EasyMDE from 'easymde';
-//import 'easymde/src/js/easymde.js';
-//const easymdeCSS = css`'!cssx|easymde/src/css/easymde.css'`;
+import EasyMDE from 'easymde';
+import CodeMirror, {
+	Editor,	
+	EditorChange,
+} from 'codemirror';
+
+
+const easymdeCSS = css`'!cssx|easymde/src/css/easymde.css'`;
+//EasyMDE doesn't include the CodeMirror CSS so manually include it
+const editorCSS = css`'!cssx|codemirror/lib/codemirror.css'`;
 
 
 @customElement('edit-page')
@@ -46,8 +51,10 @@ export class EditPageElement extends ViewElement {
 	@query('form')
 	formElement?: HTMLFormElement;
 	
+	easyMDE?: EasyMDE; 
+	
 	static get styles() {
-	  return [super.styles, css `
+	  return [super.styles,editorCSS, easymdeCSS, css `
 			.bi-file-plus-fill {
 				transform: scale(2.0); 
 				color: var(--bs-blue);
@@ -64,12 +71,33 @@ export class EditPageElement extends ViewElement {
 	}
 	
 	firstUpdated(){
-		//var easyMDE = new EasyMDE({element: this.contentsElement});	
+		//let EasyMDE add the fontawesome stylesheet to the document head for the @font-face reference. Also include fontawesome inline so that it gets added to the shadowDOM. 
+		this.easyMDE = new EasyMDE({element: this.contentsElement, autoDownloadFontAwesome: true});
+		if (this.details && this.details.mainContent){
+			readFile(this.details.mainContent).then((text: string) => {
+					this.easyMDE?.value(text);
+			});	
+		}
+		console.log(this.easyMDEElement);		 
+		this.easyMDEElement?.classList.add("form-control");		
+		
+		
+		this.easyMDE.codemirror.on("changes", (e: Editor, c: Array<EditorChange>) => {
+			if (c.find((c: any) => c.origin != "setValue")){
+				this.modified = true;
+			}			 
+		});
+		
+	
+	}
+	
+	get easyMDEElement(){		
+			return this.easyMDE?.codemirror.getWrapperElement().parentNode as HTMLElement;
 	}
 	
 	render() {
 		return html`
-
+			
 			${this.pageTitleTemplate}
 			${this.loadingTemplate}
 			${this.errorTemplate}
@@ -81,15 +109,17 @@ export class EditPageElement extends ViewElement {
 	    				<input class="form-control" type="text" required placeholder="Content Title" id="contentTitle" .value=${ifDefined(this.details?.title)} @change=${(e: Event) => this.modified = true}></input>
 					</div>
 					
-					<div class="form-group my-5">
-						<label  for="contents">Content</label>
-	    				<textarea class="form-control" type="textarea" required placeholder="Content Title" id="contents"  @change=${(e: Event) => this.modified = true}></textarea>
+					
+					<div class="form-group">
+						<link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/font-awesome/latest/css/font-awesome.min.css"></link>
+						<label  for="contents">Content</label>						  
+	    				<textarea id="contents"></textarea>
+						<div id="validationServer03Feedback" class="invalid-feedback">Content required..</div>
 					 </div>
 					
 					 <input type="file" id="fileUpload" ?multiple=${true} @change=${(e: Event) => { this.handleFileSelected(); this.requestUpdate();}}/>
 					 
 				</form>
-				${this.editorTemplate}
 				
 				${this.filesTemplate}
 					
@@ -129,9 +159,7 @@ export class EditPageElement extends ViewElement {
 		}
 	}
 	
-	get editorTemplate(){
-			return html ``;
-	}
+	
 	
 	handleFileAdd(){		
 		console.log("Add");
@@ -155,18 +183,32 @@ export class EditPageElement extends ViewElement {
 		}
 	}
 
-	handleSave(e: MouseEvent){		
+	handleSave(e: MouseEvent){
+		let isValid = true;
+		let contentValue = undefined;
+		if (this.easyMDE){
+			contentValue = this.easyMDE.value();
+			if (contentValue==""){
+				this.easyMDEElement?.classList.remove("is-valid");
+				this.easyMDEElement?.classList.add("is-invalid");
+			}else {
+				this.easyMDEElement?.classList.remove("is-invalid");
+				this.easyMDEElement?.classList.add("is-valid");
+			}
+			
+		}		
 		if (this.formElement){
-			if (this.formElement.checkValidity()){
+			isValid =  isValid && this.formElement.checkValidity();
+			this.formElement.classList.add('was-validated');			
+		}
+		if (isValid){
 				console.log("valid!");
 				const contentUpdate = <ContentDetails>{
 					title: ""
 				}	
-			} else {
+			} else {			
 				console.log("invalid!");
 			}
-			this.formElement.classList.add('was-validated');
-		}
 		
 	}
 	

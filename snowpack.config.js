@@ -19,6 +19,9 @@ module.exports = {
     "sourcemap": true,
     "out": "./target/web-build"
   },
+  packageOptions: {
+    namedExports: ['marked'],
+  },
   "plugins": [         	
       "@snowpack/plugin-typescript",
       "./lit-cssx-plugin.js",		    

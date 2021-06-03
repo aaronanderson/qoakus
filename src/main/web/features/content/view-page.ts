@@ -86,9 +86,10 @@ export class ViewPageElement extends ViewElement {
 		const regularExpressionForURL = /^https?:\/\//i;
 		renderer.link = (href, title, text) => {				
 			if (href && !regularExpressionForURL.test(href)) {
-				return `<a href="${baseUrl + href}">${text}</a>`;	
-			}					
-  			return originalRendererLink(href, title, text);
+			href = baseUrl + href;		
+			}
+			return `<a href="${href}" target="_blank">${text}</a>`;					
+  			//return originalRendererLink(href, title, text);
 		};
 
 		renderer.image = (href, title, text) => {		  
