@@ -8,6 +8,11 @@ import {biFilePlusSVG, biFileMinusSVG} from '../../components/bootstrap';
 import { ContentStore } from '../../app/store';
 import {ContentDetails, ContentFile, EditMode, saveContent, fileUpload, fileDelete  } from './content-actions';
 
+//import 'easymde/dist/easymde.min.js';
+//import EasyMDE from 'easymde';
+//import EasyMDE from 'easymde';
+//import 'easymde/src/js/easymde.js';
+//const easymdeCSS = css`'!cssx|easymde/src/css/easymde.css'`;
 
 
 @customElement('edit-page')
@@ -32,6 +37,9 @@ export class EditPageElement extends ViewElement {
 	@query('#contentTitle')
 	contentTitleElement?:HTMLInputElement;
 	
+	@query('#contents')
+	contentsElement?:HTMLTextAreaElement;
+	
 	@query("#fileUpload")
 	fileInputElement?: HTMLInputElement;
 
@@ -54,9 +62,12 @@ export class EditPageElement extends ViewElement {
 			 }
 		`];
 	}
+	
+	firstUpdated(){
+		//var easyMDE = new EasyMDE({element: this.contentsElement});	
+	}
+	
 	render() {
-		let path = this.details?.path;
-		path = path == "/"? "" : path;
 		return html`
 
 			${this.pageTitleTemplate}
@@ -68,24 +79,19 @@ export class EditPageElement extends ViewElement {
 					<div class="form-group">
 						<label  for="contentTitle">Name</label>
 	    				<input class="form-control" type="text" required placeholder="Content Title" id="contentTitle" .value=${ifDefined(this.details?.title)} @change=${(e: Event) => this.modified = true}></input>
+					</div>
+					
+					<div class="form-group my-5">
+						<label  for="contents">Content</label>
+	    				<textarea class="form-control" type="textarea" required placeholder="Content Title" id="contents"  @change=${(e: Event) => this.modified = true}></textarea>
 					 </div>
+					
 					 <input type="file" id="fileUpload" ?multiple=${true} @change=${(e: Event) => { this.handleFileSelected(); this.requestUpdate();}}/>
 					 
 				</form>
+				${this.editorTemplate}
 				
-				<div class="container">
-					<div class="row w-50 my-3">
-					    <div class="col lead">Files</div>
-					    <div class="col" @click=${(e: MouseEvent)=> this.handleFileAdd()}>${biFilePlusSVG}</div>						   
-					</div>
-					${this.details && this.editMode == EditMode.update ? this.details.files.filter((c: ContentFile) => c.fileType =="attachment").map((c: ContentFile) => html `
-					<div class="row w-50 my-3">
-					    <div class="col"><a class="nav-link" download href="/api/content/file${path}/${c.name}">${c.name}</a></div>
-					    <div class="col"  @click=${(e: MouseEvent)=> this.handleFileRemove(c)}>${biFileMinusSVG}</div>						   
-					</div>`) : undefined}
-					</ul>
-										
-				</div>
+				${this.filesTemplate}
 					
 				<div class="btn-group my-5" role="group" aria-label="Run">			  		
 					<button ?disabled=${!this.modified || this.hasErrors } type="button" class="btn btn-primary m-2" @click=${this.handleSave}>Save</button>
@@ -96,6 +102,35 @@ export class EditPageElement extends ViewElement {
 			
 
     `;
+	}
+	
+	get filesTemplate(){
+		if (this.details && this.editMode == EditMode.update){
+			let path = this.details?.path;
+			path = path == "/"? "" : path;
+		
+			return html `
+			<div class="container">
+					<div class="row w-50 my-3">
+					    <div class="col lead">Files</div>
+					    <div class="col" @click=${(e: MouseEvent)=> this.handleFileAdd()}>${biFilePlusSVG}</div>						   
+					</div>
+					${this.details.files.filter((c: ContentFile) => c.fileType =="attachment").map((c: ContentFile) => html `
+					<div class="row w-50 my-3">
+					    <div class="col"><a class="nav-link" download href="/api/content/file${path}/${c.name}">${c.name}</a></div>
+					    <div class="col"  @click=${(e: MouseEvent)=> this.handleFileRemove(c)}>${biFileMinusSVG}</div>						   
+					</div>`)}
+					</ul>
+										
+				</div>
+			
+			
+			`;
+		}
+	}
+	
+	get editorTemplate(){
+			return html ``;
 	}
 	
 	handleFileAdd(){		
