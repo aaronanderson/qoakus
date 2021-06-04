@@ -10,6 +10,10 @@ export const bootstrapRebootCSS = css`'!cssx|bootstrap/dist/css/bootstrap-reboot
 
 export const biFilePlusSVG = svg `'!cssx|bootstrap-icons/icons/file-plus-fill.svg'`;
 export const biFileMinusSVG = svg `'!cssx|bootstrap-icons/icons/file-minus-fill.svg'`;
+export const biFileTextSVG = svg `'!cssx|bootstrap-icons/icons/file-earmark-text-fill.svg'`;
+export const biMailboxSVG = svg `'!cssx|bootstrap-icons/icons/mailbox2.svg'`;
+
+
 
 
 

@@ -5,6 +5,7 @@ import { Router, RouterLocation, EmptyCommands } from '@vaadin/router';
 import marked from 'marked';
 
 import { ViewElement } from '../../components/view';
+import { biFileTextSVG} from '../../components/bootstrap';
 
 import { Content, ContentDetails, ContentFile, viewContent, newContent, editContent, deleteContent, readFile, markedRenderer } from './content-actions';
 import { ContentStore } from '../../app/store';
@@ -24,6 +25,18 @@ export class ViewPageElement extends ViewElement {
 		this.dispatch(viewContent(location.pathname.substring(5)));
 	}
 
+	static get styles() {
+	  return [super.styles, css `
+			.bi-file-earmark-text-fill {
+				transform: scale(2.0); 
+				color: var(--bs-blue);
+				cursor: pointer;			
+			 }
+		
+		`];
+	}
+	
+	
 	render() {
 		return html`
 
@@ -84,8 +97,9 @@ export class ViewPageElement extends ViewElement {
 				return html`
 					<span class="lead">Files</span>
 					<ul class="nav flex-column">
-						${attachments.map((c: ContentFile) => html`<li class="nav-item">
+						${attachments.map((c: ContentFile) => html`<li class="nav-item d-flex flex-row">
 							<a class="nav-link" download href="/api/content/file${path}/${c.name}">${c.name}</a>
+							<a class="nav-link mx-4" router-ignore target="_blank" rel="noopener noreferrer" href="/api/content/raw${path}/${c.name}">${biFileTextSVG}</a>
 						</li>`)}
 					</ul>
 				

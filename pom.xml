@@ -30,11 +30,6 @@
 
 	<dependencies>
 
-
-		<!-- <dependency> <groupId>org.apache.jackrabbit</groupId> <artifactId>oak-run-elastic</artifactId> <version>${oak.version}</version> <exclusions> <exclusion> <groupId>com.google.guava</groupId> <artifactId>guava</artifactId> </exclusion> <exclusion> <groupId>org.elasticsearch</groupId> <artifactId>elasticsearch</artifactId> </exclusion> <exclusion> <groupId>org.apache.lucene</groupId> 
-			<artifactId>lucene-core</artifactId> </exclusion> <exclusion> <groupId>org.apache.jackrabbit</groupId> <artifactId>oak-lucene</artifactId> </exclusion> </exclusions> </dependency> -->
-
-
 		<dependency>
 			<groupId>org.apache.jackrabbit</groupId>
 			<artifactId>oak-jcr</artifactId>
@@ -61,6 +56,11 @@
 
 		<dependency>
 			<groupId>io.quarkus</groupId>
+			<artifactId>quarkus-tika</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>io.quarkus</groupId>
 			<artifactId>quarkus-resteasy</artifactId>
 		</dependency>
 
@@ -74,15 +74,12 @@
 			<artifactId>quarkus-resteasy-jsonb</artifactId>
 		</dependency>
 
-
 		<!-- <dependency> <groupId>io.quarkus</groupId> <artifactId>quarkus-junit5</artifactId> <scope>test</scope> </dependency> <dependency> <groupId>io.rest-assured</groupId> <artifactId>rest-assured</artifactId> <scope>test</scope> </dependency> -->
 
 	</dependencies>
 
 
 	<build>
-
-
 
 		<plugins>
 

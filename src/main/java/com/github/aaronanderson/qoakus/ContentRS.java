@@ -1,5 +1,6 @@
 package com.github.aaronanderson.qoakus;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -35,10 +36,26 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 
 import org.apache.jackrabbit.JcrConstants;
+import org.apache.tika.exception.TikaException;
+import org.apache.tika.metadata.Metadata;
+import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
+import org.apache.tika.parser.Parser;
+import org.apache.tika.parser.RecursiveParserWrapper;
+import org.apache.tika.parser.pdf.PDFParserConfig;
+import org.apache.tika.sax.AbstractRecursiveParserWrapperHandler;
+import org.apache.tika.sax.BasicContentHandlerFactory;
+import org.apache.tika.sax.ContentHandlerFactory;
+import org.apache.tika.sax.RecursiveParserWrapperHandler;
+import org.apache.tika.sax.ToHTMLContentHandler;
+import org.apache.tika.sax.ToXMLContentHandler;
 import org.jboss.logging.Logger;
 import org.jboss.resteasy.annotations.providers.multipart.MultipartForm;
 import org.jboss.resteasy.plugins.providers.multipart.InputPart;
 import org.jboss.resteasy.plugins.providers.multipart.MultipartFormDataInput;
+import org.xml.sax.SAXException;
+
+import io.quarkus.tika.TikaParser;
 
 @Path("/content")
 @RequestScoped
@@ -50,6 +67,10 @@ public class ContentRS {
 
     @Inject
     Repository repository;
+
+    //Don't use the Quarkus custom parser, use the standard one for more control.
+    @Inject
+    TikaParser parser;
 
     /*
     @GET
@@ -208,6 +229,92 @@ public class ContentRS {
             logger.error("", e);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(String.format("Content %s file %s retrieval error: %s", contentPath, fileName, e.getMessage())).build();
         }
+    }
+
+    @GET
+    @Path("/raw{contentPath:.*}/{fileName}")
+    public Response fileRaw(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
+        try {
+
+            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
+
+            Node node = session.getNode(contentPath);
+
+            if (node.hasNode(fileName)) {
+                Node ntFile = node.getNode(fileName);
+                Node ntResource = ntFile.getNode(JcrConstants.JCR_CONTENT);
+                String mimeType = ntResource.getProperty(JcrConstants.JCR_MIMETYPE).getString();
+                Binary binary = ntResource.getProperty(JcrConstants.JCR_DATA).getBinary();
+
+                ResponseBuilder response = Response.status(Response.Status.OK);                
+                //ContentHandlerFactory factory = new BasicContentHandlerFactory(BasicContentHandlerFactory.HANDLER_TYPE.XML, -1);
+                //RecursiveParserWrapperHandler handler = new RecursiveParserWrapperHandler(factory);
+                ToHTMLContentHandler handler = new ToHTMLContentHandler();
+                String text = parser.getText(binary.getStream(), handler);
+                //String text = parseFile(binary.getStream());
+                response.entity(text);
+                response.type("text/html");
+                return response.build();
+            }
+            return Response.status(Response.Status.NOT_FOUND).entity(String.format("Content %s file %s unavailable", contentPath, fileName)).build();
+
+        } catch (Exception e) {
+            logger.error("", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(String.format("Content %s file %s retrieval error: %s", contentPath, fileName, e.getMessage())).build();
+        }
+    }
+
+    //not used but preserved for future reference of potentially inlining images into the HTML
+    private String parseFile(InputStream is) throws IOException, SAXException, TikaException {
+        ParseContext context = new ParseContext();
+
+        PDFParserConfig pdfConfig = new PDFParserConfig();
+        pdfConfig.setExtractInlineImages(true);
+        pdfConfig.setExtractUniqueInlineImagesOnly(true);
+        context.set(PDFParserConfig.class, pdfConfig);
+
+        /*
+        EmbeddedDocumentExtractor embeddedDocumentExtractor = new EmbeddedDocumentExtractor() {
+            @Override
+            public boolean shouldParseEmbedded(Metadata metadata) {
+                return true;
+            }
+        
+            @Override
+            public void parseEmbedded(InputStream stream, ContentHandler handler, Metadata metadata, boolean outputHtml)
+                    throws SAXException, IOException {
+                java.nio.file.Path outputDir = Files.createTempDirectory("tika");
+                Files.createDirectories(outputDir);
+        
+                java.nio.file.Path outputPath = new File(outputDir.toString() + "/" + metadata.get(Metadata.RESOURCE_NAME_KEY)).toPath();
+                Files.deleteIfExists(outputPath);
+                Files.copy(stream, outputPath);
+                System.out.format("Copied embedded %s\n", outputPath.toAbsolutePath());
+            }
+        };
+        
+        context.set(EmbeddedDocumentExtractor.class, embeddedDocumentExtractor);*/
+
+        //ToHTMLContentHandler handler = new ToHTMLContentHandler();
+        ContentHandlerFactory factory = new BasicContentHandlerFactory(BasicContentHandlerFactory.HANDLER_TYPE.HTML, -1);
+        RecursiveParserWrapperHandler handler = new RecursiveParserWrapperHandler(factory);
+        Metadata metadata = new Metadata();
+        AutoDetectParser parser = new AutoDetectParser();
+        RecursiveParserWrapper recursiveParser = new RecursiveParserWrapper(parser, true);
+        context.set(Parser.class, parser);
+        recursiveParser.parse(is, handler, metadata, context);
+        //return handler.toString();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < handler.getMetadataList().size(); i++) {
+            String embeddedText = handler.getMetadataList().get(i).get(AbstractRecursiveParserWrapperHandler.TIKA_CONTENT);
+            // the embedded text can be null if the given document is an image
+            // and no text recognition parser is enabled
+            if (embeddedText != null) {
+                sb.append(embeddedText);
+            }
+        }
+        return sb.toString();
     }
 
     @POST

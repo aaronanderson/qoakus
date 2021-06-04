@@ -3,7 +3,7 @@ import { property, customElement, query } from 'lit/decorators.js';
 import {ifDefined} from 'lit/directives/if-defined.js';
 
 import { ViewElement } from '../../components/view';
-import {biFilePlusSVG, biFileMinusSVG} from '../../components/bootstrap';
+import {biFilePlusSVG, biFileMinusSVG, biMailboxSVG} from '../../components/bootstrap';
 
 import { ContentStore } from '../../app/store';
 import {ContentDetails, ContentFile, EditMode, saveContent, readFile, fileUpload, fileDelete, markedRenderer, imageUpload  } from './content-actions';
@@ -57,13 +57,13 @@ export class EditPageElement extends ViewElement {
 	
 	static get styles() {
 	  return [super.styles,editorCSS, easymdeCSS, css `
-			.bi-file-plus-fill {
+			.bi-file-plus-fill, .bi-file-minus-fill, .bi-mailbox2 {
 				transform: scale(2.0); 
-				color: var(--bs-blue);
+				color: var(--bs-blue);			
 			 }
-			 .bi-file-minus-fill {
-				transform: scale(2.0); 
-				color: var(--bs-red);
+		
+			 .bi-file-plus-fill, .bi-file-minus-fill {
+					cursor: pointer;
 			 }
 				
 			 input[type=file] {
@@ -154,12 +154,15 @@ export class EditPageElement extends ViewElement {
 			<div class="container">
 					<div class="row w-50 my-3">
 					    <div class="col lead">${title}</div>
-					    <div class="col" @click=${(e: MouseEvent)=> this.handleFileAdd(fileType)}>${biFilePlusSVG}</div>						   
+					    <div class="col d-flex flex-row">
+							<div  @click=${(e: MouseEvent)=> this.handleFileAdd(fileType)}>${biFilePlusSVG}</div>
+							${fileType == "attachment"? html `<div class="mx-4" @dragover=${this.handleDrag} @drop=${this.handleDrop}>${biMailboxSVG}</div>`: undefined}
+						</div>													  
 					</div>
 					${this.details.files.filter((c: ContentFile) => c.fileType ==fileType).map((c: ContentFile) => html `
 					<div class="row w-50 my-3">
 					    <div class="col"><a class="nav-link" download href="/api/content/file${path}/${c.name}">${c.name}</a></div>
-					    <div class="col"  @click=${(e: MouseEvent)=> this.handleFileRemove(c)}>${biFileMinusSVG}</div>						   
+					    <div class="col"><div  @click=${(e: MouseEvent)=> this.handleFileRemove(c)}>${biFileMinusSVG}</div></div>						   
 					</div>`)}
 					</ul>
 										
@@ -170,7 +173,37 @@ export class EditPageElement extends ViewElement {
 		}
 	}
 	
+	handleDrag(e: DragEvent){
+		console.log("Drag Over", e);
+		//(e as any).originalEvent.dataTransfer.dropEffect = 'copy';
+		if (e.dataTransfer){
+			 const isFile = e.dataTransfer.types.includes("Files");
+			console.log("Drag types", e.dataTransfer.types);
+			if (isFile){
+				e.dataTransfer.dropEffect = 'copy';
+				e.preventDefault();		
+			}
+		}
+	}
 	
+	handleDrop(e: DragEvent){
+		console.log("Drop", e);
+		e.preventDefault();
+		if (e.dataTransfer){
+			for (let i=0; i<e.dataTransfer.items.length; i++){
+				let item = e.dataTransfer.items[i];
+				console.log("Dropped item", item.type, item.kind);
+				if ("file"== item.kind){
+					let file = item.getAsFile();
+					if (file){
+						this.dispatch(fileUpload("attachment", this.details?.path, [file]));					
+					}					
+				}else if ("string"== item.kind){
+					//item.getAsString((s)=> console.log("Dropped string", s));	
+				} 
+			}
+		}
+	}
 	
 	handleFileAdd(fileType: string){
 		this.fileType= fileType;		
@@ -214,14 +247,16 @@ export class EditPageElement extends ViewElement {
 			isValid =  isValid && this.formElement.checkValidity();
 			this.formElement.classList.add('was-validated');			
 		}
-		if (isValid){
+		if (isValid && this.details){
 				console.log("valid!");
 				const contentUpdate = <ContentDetails>{
-					title: ""
-				}	
-			} else {			
-				console.log("invalid!");
-			}
+					path: this.details.path,
+					title: "",
+					mainContent: this.details.mainContent
+					
+				};
+				this.dispatch(saveContent(contentUpdate));	
+			} 
 		
 	}
 	
