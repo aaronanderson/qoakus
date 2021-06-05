@@ -1,10 +1,13 @@
 package com.github.aaronanderson.qoakus;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Base64;
 import java.util.Calendar;
 import java.util.TimeZone;
 
@@ -14,6 +17,7 @@ import javax.jcr.Binary;
 import javax.jcr.Node;
 import javax.jcr.NodeIterator;
 import javax.jcr.Repository;
+import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
 import javax.json.Json;
@@ -34,26 +38,31 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
+import javax.ws.rs.core.StreamingOutput;
 
 import org.apache.jackrabbit.JcrConstants;
+import org.apache.tika.detect.DefaultDetector;
 import org.apache.tika.exception.TikaException;
+import org.apache.tika.extractor.EmbeddedDocumentExtractor;
+import org.apache.tika.extractor.ParsingEmbeddedDocumentExtractor;
+import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
-import org.apache.tika.parser.RecursiveParserWrapper;
+import org.apache.tika.parser.microsoft.OfficeParserConfig;
 import org.apache.tika.parser.pdf.PDFParserConfig;
-import org.apache.tika.sax.AbstractRecursiveParserWrapperHandler;
-import org.apache.tika.sax.BasicContentHandlerFactory;
-import org.apache.tika.sax.ContentHandlerFactory;
-import org.apache.tika.sax.RecursiveParserWrapperHandler;
 import org.apache.tika.sax.ToHTMLContentHandler;
-import org.apache.tika.sax.ToXMLContentHandler;
+import org.apache.tika.sax.XHTMLContentHandler;
 import org.jboss.logging.Logger;
 import org.jboss.resteasy.annotations.providers.multipart.MultipartForm;
 import org.jboss.resteasy.plugins.providers.multipart.InputPart;
 import org.jboss.resteasy.plugins.providers.multipart.MultipartFormDataInput;
+import org.xml.sax.Attributes;
+import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
+import org.xml.sax.helpers.AttributesImpl;
+import org.xml.sax.helpers.XMLFilterImpl;
 
 import io.quarkus.tika.TikaParser;
 
@@ -247,13 +256,19 @@ public class ContentRS {
                 String mimeType = ntResource.getProperty(JcrConstants.JCR_MIMETYPE).getString();
                 Binary binary = ntResource.getProperty(JcrConstants.JCR_DATA).getBinary();
 
-                ResponseBuilder response = Response.status(Response.Status.OK);                
+                ResponseBuilder response = Response.status(Response.Status.OK);
                 //ContentHandlerFactory factory = new BasicContentHandlerFactory(BasicContentHandlerFactory.HANDLER_TYPE.XML, -1);
                 //RecursiveParserWrapperHandler handler = new RecursiveParserWrapperHandler(factory);
-                ToHTMLContentHandler handler = new ToHTMLContentHandler();
-                String text = parser.getText(binary.getStream(), handler);
-                //String text = parseFile(binary.getStream());
-                response.entity(text);
+                //ToHTMLContentHandler handler = new ToHTMLContentHandler();
+                //String text = parser.getText(binary.getStream(), handler);
+                StreamingOutput stream = (os) -> {
+                    try {
+                        parseFile(binary.getStream(), os);
+                    } catch (RepositoryException | SAXException | TikaException e) {
+                        throw new IOException(e);
+                    }
+                };
+                response.entity(stream);
                 response.type("text/html");
                 return response.build();
             }
@@ -265,8 +280,7 @@ public class ContentRS {
         }
     }
 
-    //not used but preserved for future reference of potentially inlining images into the HTML
-    private String parseFile(InputStream is) throws IOException, SAXException, TikaException {
+    private void parseFile(InputStream is, OutputStream os) throws IOException, SAXException, TikaException {
         ParseContext context = new ParseContext();
 
         PDFParserConfig pdfConfig = new PDFParserConfig();
@@ -274,33 +288,25 @@ public class ContentRS {
         pdfConfig.setExtractUniqueInlineImagesOnly(true);
         context.set(PDFParserConfig.class, pdfConfig);
 
-        /*
-        EmbeddedDocumentExtractor embeddedDocumentExtractor = new EmbeddedDocumentExtractor() {
-            @Override
-            public boolean shouldParseEmbedded(Metadata metadata) {
-                return true;
-            }
-        
-            @Override
-            public void parseEmbedded(InputStream stream, ContentHandler handler, Metadata metadata, boolean outputHtml)
-                    throws SAXException, IOException {
-                java.nio.file.Path outputDir = Files.createTempDirectory("tika");
-                Files.createDirectories(outputDir);
-        
-                java.nio.file.Path outputPath = new File(outputDir.toString() + "/" + metadata.get(Metadata.RESOURCE_NAME_KEY)).toPath();
-                Files.deleteIfExists(outputPath);
-                Files.copy(stream, outputPath);
-                System.out.format("Copied embedded %s\n", outputPath.toAbsolutePath());
-            }
-        };
-        
-        context.set(EmbeddedDocumentExtractor.class, embeddedDocumentExtractor);*/
+        //use the POI SAX parser for better streaming support.
+        OfficeParserConfig ooConfig = new OfficeParserConfig();
+        ooConfig.setUseSAXDocxExtractor(true);
+        context.set(OfficeParserConfig.class, ooConfig);
 
-        //ToHTMLContentHandler handler = new ToHTMLContentHandler();
-        ContentHandlerFactory factory = new BasicContentHandlerFactory(BasicContentHandlerFactory.HANDLER_TYPE.HTML, -1);
-        RecursiveParserWrapperHandler handler = new RecursiveParserWrapperHandler(factory);
+        context.set(EmbeddedDocumentExtractor.class, new AttachmentEmbeddedDocumentExtractor(context));
+
         Metadata metadata = new Metadata();
         AutoDetectParser parser = new AutoDetectParser();
+        context.set(Parser.class, parser);
+
+        ToHTMLContentHandler handler = new ToHTMLContentHandler(os, "UTF-8");
+        XMLFilterImpl filter = new ImageFilter();
+        filter.setContentHandler(handler);
+        parser.parse(is, filter, metadata, context);
+
+        /*
+        ContentHandlerFactory factory = new BasicContentHandlerFactory(BasicContentHandlerFactory.HANDLER_TYPE.HTML, -1);
+        RecursiveParserWrapperHandler handler = new RecursiveParserWrapperHandler(factory); 
         RecursiveParserWrapper recursiveParser = new RecursiveParserWrapper(parser, true);
         context.set(Parser.class, parser);
         recursiveParser.parse(is, handler, metadata, context);
@@ -308,13 +314,129 @@ public class ContentRS {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < handler.getMetadataList().size(); i++) {
             String embeddedText = handler.getMetadataList().get(i).get(AbstractRecursiveParserWrapperHandler.TIKA_CONTENT);
-            // the embedded text can be null if the given document is an image
-            // and no text recognition parser is enabled
             if (embeddedText != null) {
                 sb.append(embeddedText);
             }
         }
-        return sb.toString();
+        return sb.toString();*/
+    }
+
+    //The Tika OOXML parser creates a img tag with a src value prefixed with "embedded" and there is no way to access the embedded
+    // image at that point. As a workaround, the extractor and XML filter code below up adjusts the embedded img elements (targets), inserts 
+    // the embedded images (source) as inline bas364 data, and then inserts a custom script that updates the img targets with the inlined sources. Custom CSS is also
+    //inserted for additional stylization. If inline image OOXML support is unimportant this elaborate XML manipulation can be omitted.
+    public static class AttachmentEmbeddedDocumentExtractor extends ParsingEmbeddedDocumentExtractor {
+
+        public AttachmentEmbeddedDocumentExtractor(ParseContext context) {
+            super(context);
+        }
+
+        @Override
+        public boolean shouldParseEmbedded(Metadata metadata) {
+            return true;
+        }
+
+        @Override
+        public void parseEmbedded(InputStream stream, ContentHandler handler, Metadata metadata, boolean outputHtml)
+                throws SAXException, IOException {
+
+            if (TikaInputStream.isTikaInputStream(stream)) {
+                Object container = TikaInputStream.cast(stream).getOpenContainer();
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                stream.transferTo(bos);
+                TikaInputStream newStream = TikaInputStream.get(bos.toByteArray());
+                newStream.setOpenContainer(container);
+
+                String attachmentName = metadata.get(Metadata.RESOURCE_NAME_KEY);
+                Metadata detectorMetadata = new Metadata();
+                detectorMetadata.add(Metadata.RESOURCE_NAME_KEY, attachmentName);
+                DefaultDetector detector = new DefaultDetector();
+                org.apache.tika.mime.MediaType mediaType = detector.detect(newStream, metadata);
+
+                AttributesImpl attrs = new AttributesImpl();
+                //attrs.addAttribute(XHTMLContentHandler.XHTML, "href", "href", , href);
+                StringBuilder src = new StringBuilder("data:").append(mediaType.toString()).append(";base64, ");
+                src.append(Base64.getEncoder().encodeToString(bos.toByteArray()));
+                if ("image".equals(mediaType.getType())) {
+                    attrs.addAttribute(XHTMLContentHandler.XHTML, "src", "src", "CDATA", src.toString());
+                    attrs.addAttribute(XHTMLContentHandler.XHTML, "data-src", "data-src", "CDATA", attachmentName);
+                    handler.startElement(XHTMLContentHandler.XHTML, "img", "img", attrs);
+                    handler.endElement(XHTMLContentHandler.XHTML, "img", "img");
+                } else {
+                    attrs.addAttribute(XHTMLContentHandler.XHTML, "href", "", "", src.toString());
+                    attrs.addAttribute(XHTMLContentHandler.XHTML, "download", "", "", attachmentName);
+                    handler.startElement(XHTMLContentHandler.XHTML, "a", "a", attrs);
+                    handler.characters(attachmentName.toCharArray(), 0, attachmentName.length());
+                    handler.endElement(XHTMLContentHandler.XHTML, "a", "a");
+                }
+                handler.startElement(XHTMLContentHandler.XHTML, "br", "br", new AttributesImpl());
+                handler.endElement(XHTMLContentHandler.XHTML, "br", "br");
+
+                super.parseEmbedded(newStream, handler, metadata, outputHtml);
+            }
+        };
+
+    }
+
+    private static class ImageFilter extends XMLFilterImpl {
+        public void startElement(String namespaceURI, String localName, String name, Attributes attributes) throws SAXException {
+            if (localName.equals("img")) {
+                String src = attributes.getValue("src");
+                if (src != null && src.startsWith("embedded:")) {
+                    AttributesImpl attrs = new AttributesImpl(attributes);
+                    attrs.removeAttribute(attrs.getIndex("src"));
+                    attrs.addAttribute(namespaceURI, "data-target", "data-target", "CDATA", src);
+                    attrs.addAttribute(namespaceURI, "class", "class", "CDATA", "embedded-image-hide");
+                    super.startElement(namespaceURI, localName, name, attrs);
+                } else {
+                    super.startElement(namespaceURI, localName, name, attributes);
+                }
+            } else if (localName.equals("head")) {
+                super.startElement(namespaceURI, localName, name, attributes);
+                super.startElement(namespaceURI, "style", "style", new AttributesImpl());
+                String styleContent = ".embedded-image-hide, .package-entry h1 {\n"
+                        + "  display: none;\n"
+                        + "}\n"
+                        + ".embedded-image {\n"
+                        + "  width: 640px;\n"
+                        + "  height: auto;\n"
+                        + "}\n"
+                        + ".attachment-entry h1 {\n"
+                        + "  color: blue;\n"
+                        + "  font-size: 20pt;\n"
+                        + "}\n"
+                        + "p {\n"
+                        + "  white-space: pre;\n"
+                        + "}\n";
+                super.characters(styleContent.toCharArray(), 0, styleContent.length());
+                super.endElement(namespaceURI, "style", "style");
+
+                super.startElement(namespaceURI, "script", "script", new AttributesImpl());
+                String scriptContent = "window.addEventListener('load', (event) = function() {\n"
+                        + "    let imgTargets = document.querySelectorAll('img[data-target]');\n"
+                        + "    for (let imgTarget of imgTargets){\n"
+                        + "      let targetId = imgTarget.getAttribute('data-target').substring(9);\n"
+                        + "      let rootPackage = imgTarget.closest('.package-entry');\n"
+                        + "      if(rootPackage){\n"
+                        + "        let imgSrc = rootPackage.querySelector(`img[data-src=\"${targetId}\"]`);\n"
+                        + "        if(imgSrc){\n"
+                        + "          imgTarget.setAttribute('src', imgSrc.getAttribute('src'));"
+                        + "          imgTarget.classList.remove('embedded-image-hide');"
+                        + "          imgTarget.classList.add('embedded-image');"
+                        + "          imgTarget.parentNode.insertBefore(document.createElement(\"br\"), imgTarget.nextSibling);"
+                        + "          imgSrc.parentNode.removeChild(imgSrc.nextSibling);"
+                        + "          imgSrc.parentNode.removeChild(imgSrc);"
+                        + "        }\n"
+                        + "      }\n"
+                        + "    }\n"
+                        + "});";
+                super.characters(scriptContent.toCharArray(), 0, scriptContent.length());
+                super.endElement(namespaceURI, "script", "script");
+            } else {
+                super.startElement(namespaceURI, localName, name, attributes);
+            }
+
+        }
     }
 
     @POST
