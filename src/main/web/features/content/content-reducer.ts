@@ -1,5 +1,6 @@
 import {
 	ContentState, ContentFile,
+	FETCH_USER, FETCH_USER_SUCCESS, FETCH_USER_ERROR,
 	VIEW_CONTENT, VIEW_CONTENT_SUCCESS, VIEW_CONTENT_ERROR,
 	NEW_CONTENT, EDIT_CONTENT,
 	FILE_UPLOAD, FILE_UPLOAD_SUCCESS, FILE_UPLOAD_ERROR,
@@ -22,6 +23,23 @@ const editor = (state: ContentState = initialState, action: any) => {
 	return produce(state, (draft: ContentState) => {
 
 		switch (action.type) {
+			case FETCH_USER: {
+				draft.errorMessage = undefined;
+				draft.loading = true;
+				break
+			}
+			case FETCH_USER_SUCCESS: {
+				draft.errorMessage = undefined;
+				draft.user = action.payload.user;
+				draft.loading = false;
+				break
+			}
+			case FETCH_USER_ERROR: {
+				draft.errorMessage = action.payload.error;
+				draft.user = undefined;
+				draft.loading = false;
+				break
+			}
 			case VIEW_CONTENT: {
 				draft.errorMessage = undefined;
 				draft.loading = true;
@@ -35,6 +53,7 @@ const editor = (state: ContentState = initialState, action: any) => {
 			}
 			case VIEW_CONTENT_ERROR: {
 				draft.errorMessage = action.payload.error;
+				draft.contentDetails = undefined;
 				draft.loading = false;
 				break
 			}

@@ -185,7 +185,10 @@ public class RepositoryManager {
                 Group general = userManager.createGroup("qoakus-general");
                 User testUser = userManager.createUser("test", "test");
                 general.addMember(testUser);
-
+                Node userNode = session.getNode(testUser.getPath());
+                Node profileNode =userNode.addNode("profile", "nt:unstructured");
+                profileNode.setProperty("name", "Test User");
+                profileNode.setProperty("email", "test@test");
                 /*Alternative access control management:
                 AccessControlManager acMgr = session.getAccessControlManager();
                 JackrabbitAccessControlList acl = AccessControlUtils.getAccessControlList(session, root.getPath());
@@ -207,7 +210,6 @@ public class RepositoryManager {
                 category.addMixin("qo:content");
                 category.setProperty("qo:title", "Java");
                 addFile(category, "md/java.md", "content.md", "text/markdown", "main", session);
-                //addFile(category, "md/java.pdf", "java.pdf", "application/pdf", "attachment", session);
                 AccessControlUtils.addAccessControlEntry(session, category.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_ALL }, true);
 
                 category = category.addNode(RandomStringUtils.random(10, true, true));
@@ -237,7 +239,6 @@ public class RepositoryManager {
                 addFile(category, "md/css.md", "protected.md", "text/markdown", "main", session);
                 AccessControlUtils.addAccessControlEntry(session, category.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_ALL }, false);
 
-                // 
                 //AccessControlUtils.grantAllToEveryone(session, "/");
                 //AccessControlUtils.denyAllToEveryone(session, "/");
 
@@ -304,3 +305,5 @@ public class RepositoryManager {
     }
 
 }
+
+

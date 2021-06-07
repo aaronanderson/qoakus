@@ -3,6 +3,10 @@ import { Router } from '@vaadin/router';
 import { qoakusDB } from '../../app/store';
 
 import marked from 'marked';
+export const FETCH_USER = 'FETCH_USER'
+export const FETCH_USER_SUCCESS = 'FETCH_USER_SUCCESS'
+export const FETCH_USER_ERROR = 'FETCH_USER_ERROR'
+
 
 export const VIEW_CONTENT = 'VIEW_CONTENT'
 export const VIEW_CONTENT_SUCCESS = 'VIEW_CONTENT_SUCCESS'
@@ -44,8 +48,39 @@ export interface ContentState {
 	contentDetails?: ContentDetails;
 	editMode?: EditMode;
 
+	user?: User;
+
 
 }
+
+
+export const fetchUser: any = () => async (dispatch: any, getState: any) => {
+	//cache the user
+	const existingUser = getState().contents?.user;
+	if (!existingUser) {
+		dispatch({ type: FETCH_USER });
+
+		try {
+			const contentResponse = await fetch(`/api/user`, {
+				method: 'GET',
+				headers: {
+					'Accept': 'application/json',
+				},
+			});
+			const userResult: UserResult = await contentResponse.json();
+			if (userResult.status == "error") {
+				throw Error(userResult.message);
+			}
+
+			dispatch({ type: FETCH_USER_SUCCESS, payload: { user: userResult.user } });
+		} catch (error) {
+			console.error('Error:', error);
+			dispatch({ type: FETCH_USER_ERROR, payload: { error: error } })
+		}
+
+	}
+}
+
 
 export const viewContent: any = (path: string) => async (dispatch: any) => {
 	console.log("viewContent", path);
@@ -357,6 +392,22 @@ export const markedRenderer = (basePath?: string) => {
 	};
 
 	return renderer;
+}
+
+export interface UserResult {
+	status: string;
+	message?: string;
+
+	user?: User;
+}
+
+export interface User {
+	userId: string;
+	principal: string;
+	path: string;
+	name: string;
+	email: string;
+
 }
 
 

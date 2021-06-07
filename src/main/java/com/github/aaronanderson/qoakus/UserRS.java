@@ -3,6 +3,7 @@ package com.github.aaronanderson.qoakus;
 import javax.enterprise.context.RequestScoped;
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
+import javax.jcr.Node;
 import javax.jcr.Repository;
 import javax.jcr.Session;
 import javax.json.Json;
@@ -16,6 +17,9 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import org.apache.jackrabbit.api.JackrabbitSession;
+import org.apache.jackrabbit.api.security.user.User;
+import org.apache.jackrabbit.api.security.user.UserManager;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.logging.Logger;
 
@@ -43,8 +47,21 @@ public class UserRS {
             JsonObjectBuilder result = Json.createObjectBuilder();
             Session session = ContentRS.getSession(idToken, repository);
             String userId = session.getUserID();
-            //UserManager userManager = ((JackrabbitSession) session).getUserManager();
-            result.add("userId", userId);
+            UserManager userManager = ((JackrabbitSession) session).getUserManager();
+            User user = (User) userManager.getAuthorizable(userId);
+            String principal = user.getPrincipal().getName();
+            String userPath = user.getPath();
+            Node userNode = session.getNode(userPath);
+            Node userProfile = userNode.getNode("profile");
+            String name = userProfile.getProperty("name").getString();
+            String email = userProfile.getProperty("email").getString();
+            JsonObjectBuilder userJson = Json.createObjectBuilder();
+            userJson.add("userId", userId);
+            userJson.add("principal", principal);
+            userJson.add("path", userPath);
+            userJson.add("name", name);
+            userJson.add("email", email);
+            result.add("user", userJson);
             result.add("status", "ok");
             return Response.status(200).entity(result.build()).build();
         } catch (Exception e) {

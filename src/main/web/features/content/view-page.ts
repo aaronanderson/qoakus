@@ -7,7 +7,7 @@ import marked from 'marked';
 import { ViewElement } from '../../components/view';
 import { biFileTextSVG} from '../../components/bootstrap';
 
-import { Content, ContentDetails, ContentFile, viewContent, newContent, editContent, deleteContent, readFile, markedRenderer } from './content-actions';
+import { Content, ContentDetails, ContentFile, User, viewContent, fetchUser, newContent, editContent, deleteContent, readFile, markedRenderer } from './content-actions';
 import { ContentStore } from '../../app/store';
 
 
@@ -18,11 +18,18 @@ export class ViewPageElement extends ViewElement {
 	pageTitle = 'View';
 
 	@property({ type: Object })
+	user?: User;
+	
+	@property({ type: Object })
 	details?: ContentDetails;
 
 	onAfterEnter(location: RouterLocation, commands: EmptyCommands, router: Router) {
-		console.log("dispatch", location.pathname, commands);
-		this.dispatch(viewContent(location.pathname.substring(5)));
+		//console.log("dispatch", location.pathname, commands);
+		const path = location.pathname.substring(5);
+		this.dispatch(viewContent(path));
+		if (path =="/"){
+			this.dispatch(fetchUser());
+		}
 	}
 
 	static get styles() {
@@ -39,11 +46,11 @@ export class ViewPageElement extends ViewElement {
 	
 	render() {
 		return html`
-
+			${this.userTemplate}
 			${this.pageTitleTemplate}
 			${this.loadingTemplate}
 			${this.errorTemplate}
-			<div class="container">
+			<div class="container">				
 				${this.parentTemplate}
 				${this.detailsTemplate}
 				${this.filesTemplate}
@@ -60,6 +67,12 @@ export class ViewPageElement extends ViewElement {
     `;
 	}
 
+	get userTemplate() {
+		if (this.user  && this.details &&  this.details.path == "/") {
+			return html`<span class="lead float-end mx-5">Welcome ${this.user.name}!</span>	`;
+		}
+	}
+	
 	get parentTemplate() {
 		if (this.details && this.details.parent) {
 			return html`
@@ -124,8 +137,9 @@ export class ViewPageElement extends ViewElement {
 
 	stateChanged(state: ContentStore) {
 		if (state.content) {
-			console.log(state.content);
-			const { contentDetails, loading, errorMessage } = state.content;
+			//console.log(state.content);
+			const { user, contentDetails, loading, errorMessage } = state.content;
+			this.user = user;
 			this.loading = loading;
 			this.errorMessage = errorMessage;
 			this.details = contentDetails;
