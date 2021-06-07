@@ -9,11 +9,14 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.Calendar;
+import java.util.Optional;
 import java.util.TimeZone;
 
 import javax.enterprise.context.RequestScoped;
+import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.jcr.Binary;
+import javax.jcr.LoginException;
 import javax.jcr.Node;
 import javax.jcr.NodeIterator;
 import javax.jcr.Repository;
@@ -54,6 +57,7 @@ import org.apache.tika.parser.microsoft.OfficeParserConfig;
 import org.apache.tika.parser.pdf.PDFParserConfig;
 import org.apache.tika.sax.ToHTMLContentHandler;
 import org.apache.tika.sax.XHTMLContentHandler;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.logging.Logger;
 import org.jboss.resteasy.annotations.providers.multipart.MultipartForm;
 import org.jboss.resteasy.plugins.providers.multipart.InputPart;
@@ -64,7 +68,9 @@ import org.xml.sax.SAXException;
 import org.xml.sax.helpers.AttributesImpl;
 import org.xml.sax.helpers.XMLFilterImpl;
 
-import io.quarkus.tika.TikaParser;
+import com.github.aaronanderson.qoakus.oidc.OIDCTokenCredentials;
+
+import io.quarkus.oidc.IdToken;
 
 @Path("/content")
 @RequestScoped
@@ -78,39 +84,25 @@ public class ContentRS {
     Repository repository;
 
     //Don't use the Quarkus custom parser, use the standard one for more control.
-    @Inject
-    TikaParser parser;
+    //@Inject
+    //TikaParser parser;
 
-    /*
-    @GET
-    @Path("main")
-    public Response main() {
-        try {
-            JsonObjectBuilder result = Json.createObjectBuilder();
-            JsonArrayBuilder main = Json.createArrayBuilder();
-    
-            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
-            Node root = session.getRootNode();
-            NodeIterator nodeIterator = root.getNodes();
-            while (nodeIterator.hasNext()) {
-                Node node = nodeIterator.nextNode();
-                if (node.isNodeType("qo:ContentType")) {
-                    JsonObjectBuilder content = Json.createObjectBuilder();
-                    content.add("path", node.getPath());
-                    content.add("title", node.getProperty("qo:title").getString());
-                    main.add(content);
-                }
-            }
-            result.add("main", main);
-            result.add("status", "ok");
-            return Response.status(200).entity(result.build()).build();
-    
-        } catch (Exception e) {
-            logger.error("", e);
-            JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
+    @Inject
+    @IdToken
+    Instance<JsonWebToken> idToken;
+
+    private Session getSession() throws LoginException, RepositoryException {
+        return getSession(idToken, repository);
+    }
+
+    static Session getSession(Instance<JsonWebToken> idToken, Repository repository) throws LoginException, RepositoryException {
+        if (idToken.isResolvable()) {
+            Session session = repository.login(new OIDCTokenCredentials(idToken.get()));
+            //RepositoryManager.saveRepositoryXML(repository);
+            return session;
         }
-    }*/
+        return repository.login(new SimpleCredentials("test", "test".toCharArray()));
+    }
 
     //not sure why two different resources are needed. Couldn't get a single regexp to work.
     @GET
@@ -128,7 +120,7 @@ public class ContentRS {
             JsonArrayBuilder children = Json.createArrayBuilder();
             contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
 
-            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            Session session = getSession();
             Node node = session.getNode(contentPath);
 
             if (contentPath.length() > 1) {
@@ -196,7 +188,7 @@ public class ContentRS {
     @Path("{contentPath:.*}")
     public Response deleteContent(@PathParam("contentPath") String contentPath) {
         try {
-            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            Session session = getSession();
             contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
             Node node = session.getNode(contentPath);
             node.remove();
@@ -214,7 +206,7 @@ public class ContentRS {
     public Response fileDownload(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
         try {
 
-            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            Session session = getSession();
             contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
 
             Node node = session.getNode(contentPath);
@@ -245,7 +237,7 @@ public class ContentRS {
     public Response fileRaw(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
         try {
 
-            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            Session session = getSession();
             contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
 
             Node node = session.getNode(contentPath);
@@ -444,7 +436,7 @@ public class ContentRS {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public Response fileUpload(@PathParam("contentPath") String contentPath, @MultipartForm MultipartFormDataInput input, @DefaultValue("attachment") @QueryParam("type") String fileType) {
         try {
-            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            Session session = getSession();
             String path = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
             Node node = session.getNode(path);
             for (InputPart part : input.getParts()) {
@@ -489,7 +481,7 @@ public class ContentRS {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public Response fileMarkedUpload(@PathParam("contentPath") String contentPath, @MultipartForm MultipartFormDataInput input) {
         try {
-            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            Session session = getSession();
             String path = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
             Node node = session.getNode(path);
             InputPart part = input.getParts().get(0);
@@ -530,7 +522,7 @@ public class ContentRS {
     @Path("/file{contentPath:.*}/{fileName}")
     public Response fileDelete(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
         try {
-            Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
+            Session session = getSession();
             contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
             Node node = session.getNode(contentPath);
             Node fileNode = node.getNode(fileName);
