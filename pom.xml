@@ -24,6 +24,14 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
+			<!-- include optional dependency version information -->
+			<dependency>
+				<groupId>org.apache.jackrabbit</groupId>
+				<artifactId>oak-parent</artifactId>
+				<version>${oak.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 
@@ -44,6 +52,18 @@
 
 		<dependency>
 			<groupId>org.apache.jackrabbit</groupId>
+			<artifactId>oak-segment-remote</artifactId>
+			<version>${oak.version}</version>
+		</dependency>
+
+		<!--  include only the required aws segment dependencies included in oak-run -->
+		<dependency>
+			<groupId>io.dropwizard.metrics</groupId>
+			<artifactId>metrics-core</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.jackrabbit</groupId>
 			<artifactId>oak-segment-aws</artifactId>
 			<version>${oak.version}</version>
 		</dependency>
@@ -53,13 +73,13 @@
 			<artifactId>oak-search-elastic</artifactId>
 			<version>${oak.version}</version>
 		</dependency>
-		
-		 <dependency>
-            <groupId>org.apache.jackrabbit</groupId>
-            <artifactId>oak-auth-external</artifactId>
-            <version>${oak.version}</version>
-        </dependency>
-		
+
+		<dependency>
+			<groupId>org.apache.jackrabbit</groupId>
+			<artifactId>oak-auth-external</artifactId>
+			<version>${oak.version}</version>
+		</dependency>
+
 		<dependency>
 			<groupId>io.quarkus</groupId>
 			<artifactId>quarkus-oidc</artifactId>
@@ -84,6 +104,7 @@
 			<groupId>io.quarkus</groupId>
 			<artifactId>quarkus-resteasy-jsonb</artifactId>
 		</dependency>
+
 
 		<!-- <dependency> <groupId>io.quarkus</groupId> <artifactId>quarkus-junit5</artifactId> <scope>test</scope> </dependency> <dependency> <groupId>io.rest-assured</groupId> <artifactId>rest-assured</artifactId> <scope>test</scope> </dependency> -->
 

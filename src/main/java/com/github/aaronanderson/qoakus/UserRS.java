@@ -48,7 +48,7 @@ public class UserRS {
             Session session = ContentRS.getSession(idToken, repository);
             String userId = session.getUserID();
             UserManager userManager = ((JackrabbitSession) session).getUserManager();
-            User user = (User) userManager.getAuthorizable(userId);
+            User user = userManager.getAuthorizable(userId, User.class);
             String principal = user.getPrincipal().getName();
             String userPath = user.getPath();
             Node userNode = session.getNode(userPath);

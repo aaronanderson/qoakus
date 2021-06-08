@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.event.Observes;
@@ -51,7 +52,11 @@ import org.apache.jackrabbit.commons.jackrabbit.authorization.AccessControlUtils
 import org.apache.jackrabbit.oak.Oak;
 import org.apache.jackrabbit.oak.jcr.Jcr;
 import org.apache.jackrabbit.oak.security.authentication.user.LoginModuleImpl;
+import org.apache.jackrabbit.oak.segment.SegmentNodeStoreBuilders;
+import org.apache.jackrabbit.oak.segment.aws.AwsContext;
+import org.apache.jackrabbit.oak.segment.aws.AwsPersistence;
 import org.apache.jackrabbit.oak.segment.file.FileStore;
+import org.apache.jackrabbit.oak.segment.file.FileStoreBuilder;
 import org.apache.jackrabbit.oak.spi.security.ConfigurationParameters;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityProvider;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityProviderManager;
@@ -63,21 +68,18 @@ import org.apache.jackrabbit.oak.spi.security.authentication.external.impl.Defau
 import org.apache.jackrabbit.oak.spi.security.authentication.external.impl.ExternalIDPManagerImpl;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.impl.ExternalLoginModule;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.impl.SyncManagerImpl;
+import org.apache.jackrabbit.oak.spi.state.NodeStore;
 import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import org.xml.sax.SAXException;
 
+import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
+import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.github.aaronanderson.qoakus.oidc.OIDCIdentityProvider;
 
-/*import org.apache.jackrabbit.oak.segment.SegmentNodeStoreBuilders;
-import org.apache.jackrabbit.oak.segment.aws.AwsContext;
-import org.apache.jackrabbit.oak.segment.aws.AwsPersistence;
-import org.apache.jackrabbit.oak.segment.file.FileStore;
-import org.apache.jackrabbit.oak.segment.file.FileStoreBuilder;
-import org.apache.jackrabbit.oak.spi.state.NodeStore;
-
-import com.google.common.io.Files;
-*/
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 
@@ -89,6 +91,26 @@ public class RepositoryManager {
     @Inject
     OIDCIdentityProvider oidcIdp;
 
+    @ConfigProperty(name = "qoakus.aws.region")
+    Optional<String> region;
+
+    @ConfigProperty(name = "qoakus.aws.s3-bucket")
+    Optional<String> bucketName;
+
+    //required, empty string not supported and results in invalid S3 paths like s3:bucket//log...
+    @ConfigProperty(name = "qoakus.aws.s3-root-dir")
+    Optional<String> rootDirectory;
+
+    @ConfigProperty(name = "qoakus.aws.dynamodb-journal-table-name")
+    Optional<String> journalTableName;
+
+    @ConfigProperty(name = "qoakus.aws.dynamodb-lock-table-name")
+    Optional<String> lockTableName;
+
+    //nothings is actually stored in this directory due to the custom persistence.
+    @ConfigProperty(name = "qoakus.aws.filestore-path")
+    Optional<String> fileStorePath;
+
     private Repository repository;
 
     private FileStore fileStore;
@@ -96,18 +118,21 @@ public class RepositoryManager {
     void onStart(@Observes StartupEvent ev) {
 
         try {
-            //consider direct binary download support
-            //https://jackrabbit.apache.org/oak/docs/features/direct-binary-access.html
-            //Node ntFile = session.getNode("/content/file.png");
-            //Node ntResource = ntFile.getNode("jcr:content");
-            //Binary binary = ntResource.getProperty("jcr:data").getBinary();
-
-            /*AwsContext awsContext;// = AwsContext.create(s3, bucketName, AWS_ROOT_PATH, ddb, AWS_JOURNAL_TABLE_NAME,                AWS_LOCK_TABLE_NAME);
-            AwsPersistence persistence = new AwsPersistence(awsContext);
-            FileStore fileStore = FileStoreBuilder.fileStoreBuilder(Files.createTempDir()).withCustomPersistence(persistence).build();
-            NodeStore nodeStore = SegmentNodeStoreBuilders.builder(fileStore).build();
-            Oak oak = new Oak(nodeStore);*/
-
+            Oak oak = null;
+            if (region.isPresent() && bucketName.isPresent() && rootDirectory.isPresent() && journalTableName.isPresent() && lockTableName.isPresent()) {
+                logger.infof("Configuring AWS persistence");
+                AmazonS3 s3Client = AmazonS3ClientBuilder.standard().withRegion(region.get()).build();
+                AmazonDynamoDB dynamoDBClient = AmazonDynamoDBClientBuilder.standard().withRegion(region.get()).build();
+                AwsContext awsContext = AwsContext.create(s3Client, bucketName.get(), rootDirectory.get(), dynamoDBClient, journalTableName.get(), lockTableName.get());
+                AwsPersistence persistence = new AwsPersistence(awsContext);
+                Path fileStoreDir = fileStorePath.isPresent() ? Paths.get(fileStorePath.get()) : Files.createTempDirectory("qouakus");
+                fileStore = FileStoreBuilder.fileStoreBuilder(fileStoreDir.toFile()).withCustomPersistence(persistence).build();
+                NodeStore nodeStore = SegmentNodeStoreBuilders.builder(fileStore).build();
+                oak = new Oak(nodeStore);
+            } else {
+                oak = new Oak();
+                oak.with("qoakus");
+            }
             //setup ExteralLoginModule
             //http://jackrabbit.apache.org/oak/docs/security/authentication.html
             Configuration c = new Configuration() {
@@ -123,9 +148,7 @@ public class RepositoryManager {
             };
             Configuration.setConfiguration(c);
 
-            Oak oak = new Oak();
-            oak.with("qoakus");
-
+            //Register the External Identity Provider
             Whiteboard whiteboard = oak.getWhiteboard();
             whiteboard.register(ExternalIdentityProviderManager.class, new ExternalIDPManagerImpl(whiteboard), Collections.emptyMap());
             whiteboard.register(SyncManager.class, new SyncManagerImpl(whiteboard), Collections.emptyMap());
@@ -161,12 +184,15 @@ public class RepositoryManager {
             //TODO the internal admin session should never be externally accessible outside the JVM but consider setting a different default userID/password combo, UserConstants.PARAM_ADMIN_ID, or omitting the password
             //UserConstants.PARAM_OMIT_ADMIN_PW and use the JVM Subject.doAS like https://github.com/apache/jackrabbit-oak/blob/acdfc74012ebed033a34a78727579508919b1818/oak-core/src/test/java/org/apache/jackrabbit/oak/security/user/UserInitializerTest.java#L176
 
-            NodeTypeManager mgr = session.getWorkspace().getNodeTypeManager();
-
-            if (!mgr.hasNodeType("qo:ContentType")) {
-                InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream("cnd/content.cnd");
-                CndImporter.registerNodeTypes(new InputStreamReader(is), session);
-
+            Node root = session.getRootNode();
+            if (!root.hasProperty("qo:title")) {
+                logger.infof("Performing one-time initial configuration");
+                NodeTypeManager nodeTypeManager = session.getWorkspace().getNodeTypeManager();
+                if (!nodeTypeManager.hasNodeType("qo:ContentType")) {
+                    InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream("cnd/content.cnd");
+                    CndImporter.registerNodeTypes(new InputStreamReader(is), session);
+                    session.save();
+                }
                 //Manual NodeType creation:
                 /*NodeTypeTemplate type = mgr.createNodeTypeTemplate();
                 type.setName("ns:NodeType");
@@ -186,7 +212,7 @@ public class RepositoryManager {
                 User testUser = userManager.createUser("test", "test");
                 general.addMember(testUser);
                 Node userNode = session.getNode(testUser.getPath());
-                Node profileNode =userNode.addNode("profile", "nt:unstructured");
+                Node profileNode = userNode.addNode("profile", "nt:unstructured");
                 profileNode.setProperty("name", "Test User");
                 profileNode.setProperty("email", "test@test");
                 /*Alternative access control management:
@@ -199,11 +225,10 @@ public class RepositoryManager {
                     System.out.format("Policy %s\n", policy);
                 }*/
 
-                Node root = session.getRootNode();
                 root.addMixin("qo:content");
                 root.setProperty("qo:title", "Main");
                 addFile(root, "md/main.md", "content.md", "text/markdown", "main", session);
-                AccessControlUtils.addAccessControlEntry(session, root.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_READ }, true);
+                AccessControlUtils.addAccessControlEntry(session, root.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_READ, }, true);
 
                 //String id =UUID.randomUUID().toString();
                 Node category = root.addNode(RandomStringUtils.random(10, true, true));
@@ -242,7 +267,7 @@ public class RepositoryManager {
                 //AccessControlUtils.grantAllToEveryone(session, "/");
                 //AccessControlUtils.denyAllToEveryone(session, "/");
 
-                //saveRepositoryXML(repository);
+                saveRepositoryXML(repository);
                 session.save();
 
             }
@@ -300,10 +325,11 @@ public class RepositoryManager {
     }
 
     void onShutdown(@Observes ShutdownEvent ev) {
-        //fileStore.close();
+        //It is very important to cleanly shutdown the filestore/AWS persistence. Otherwise a lengthy recovery will occur on the next startup.
+        if (fileStore != null) {
+            fileStore.close();
+        }
 
     }
 
 }
-
-

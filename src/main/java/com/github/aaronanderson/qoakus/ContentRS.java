@@ -4,12 +4,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.PrivilegedExceptionAction;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.Calendar;
-import java.util.Optional;
 import java.util.TimeZone;
 
 import javax.enterprise.context.RequestScoped;
@@ -23,10 +23,12 @@ import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
+import javax.jcr.security.Privilege;
 import javax.json.Json;
 import javax.json.JsonArrayBuilder;
 import javax.json.JsonObject;
 import javax.json.JsonObjectBuilder;
+import javax.security.auth.Subject;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.DefaultValue;
@@ -44,6 +46,11 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.StreamingOutput;
 
 import org.apache.jackrabbit.JcrConstants;
+import org.apache.jackrabbit.api.JackrabbitSession;
+import org.apache.jackrabbit.api.security.user.Group;
+import org.apache.jackrabbit.api.security.user.UserManager;
+import org.apache.jackrabbit.commons.jackrabbit.authorization.AccessControlUtils;
+import org.apache.jackrabbit.oak.spi.security.authentication.SystemSubject;
 import org.apache.tika.detect.DefaultDetector;
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.extractor.EmbeddedDocumentExtractor;
@@ -333,41 +340,46 @@ public class ContentRS {
                 throws SAXException, IOException {
 
             if (TikaInputStream.isTikaInputStream(stream)) {
-                Object container = TikaInputStream.cast(stream).getOpenContainer();
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                stream.transferTo(bos);
-                TikaInputStream newStream = TikaInputStream.get(bos.toByteArray());
-                newStream.setOpenContainer(container);
+                TikaInputStream tikaStream = TikaInputStream.cast(stream);
+                Object container = tikaStream.getOpenContainer();
+                if (tikaStream.getLength() > 0) {
+                    ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                    stream.transferTo(bos);
+                    TikaInputStream newStream = TikaInputStream.get(bos.toByteArray());
+                    newStream.setOpenContainer(container);
 
-                String attachmentName = metadata.get(Metadata.RESOURCE_NAME_KEY);
-                Metadata detectorMetadata = new Metadata();
-                detectorMetadata.add(Metadata.RESOURCE_NAME_KEY, attachmentName);
-                DefaultDetector detector = new DefaultDetector();
-                org.apache.tika.mime.MediaType mediaType = detector.detect(newStream, metadata);
-
-                AttributesImpl attrs = new AttributesImpl();
-                //attrs.addAttribute(XHTMLContentHandler.XHTML, "href", "href", , href);
-                StringBuilder src = new StringBuilder("data:").append(mediaType.toString()).append(";base64, ");
-                src.append(Base64.getEncoder().encodeToString(bos.toByteArray()));
-                if ("image".equals(mediaType.getType())) {
-                    attrs.addAttribute(XHTMLContentHandler.XHTML, "src", "src", "CDATA", src.toString());
-                    attrs.addAttribute(XHTMLContentHandler.XHTML, "data-src", "data-src", "CDATA", attachmentName);
-                    handler.startElement(XHTMLContentHandler.XHTML, "img", "img", attrs);
-                    handler.endElement(XHTMLContentHandler.XHTML, "img", "img");
-                } else {
-                    attrs.addAttribute(XHTMLContentHandler.XHTML, "href", "", "", src.toString());
-                    attrs.addAttribute(XHTMLContentHandler.XHTML, "download", "", "", attachmentName);
-                    handler.startElement(XHTMLContentHandler.XHTML, "a", "a", attrs);
-                    handler.characters(attachmentName.toCharArray(), 0, attachmentName.length());
-                    handler.endElement(XHTMLContentHandler.XHTML, "a", "a");
+                    String attachmentName = metadata.get(Metadata.RESOURCE_NAME_KEY);
+                    addAttachment(attachmentName, bos.toByteArray(), handler);
+                    super.parseEmbedded(newStream, handler, metadata, outputHtml);
                 }
-                handler.startElement(XHTMLContentHandler.XHTML, "br", "br", new AttributesImpl());
-                handler.endElement(XHTMLContentHandler.XHTML, "br", "br");
-
-                super.parseEmbedded(newStream, handler, metadata, outputHtml);
             }
-        };
+        }
 
+        private void addAttachment(String attachmentName, byte[] bos, ContentHandler handler) throws IOException, SAXException {
+            Metadata detectorMetadata = new Metadata();
+            detectorMetadata.add(Metadata.RESOURCE_NAME_KEY, attachmentName);
+            DefaultDetector detector = new DefaultDetector();
+            org.apache.tika.mime.MediaType mediaType = detector.detect(TikaInputStream.get(bos), detectorMetadata);
+
+            AttributesImpl attrs = new AttributesImpl();
+            //attrs.addAttribute(XHTMLContentHandler.XHTML, "href", "href", , href);
+            StringBuilder src = new StringBuilder("data:").append(mediaType.toString()).append(";base64, ");
+            src.append(Base64.getEncoder().encodeToString(bos));
+            if ("image".equals(mediaType.getType())) {
+                attrs.addAttribute(XHTMLContentHandler.XHTML, "src", "src", "CDATA", src.toString());
+                attrs.addAttribute(XHTMLContentHandler.XHTML, "data-src", "data-src", "CDATA", attachmentName);
+                handler.startElement(XHTMLContentHandler.XHTML, "img", "img", attrs);
+                handler.endElement(XHTMLContentHandler.XHTML, "img", "img");
+            } else {
+                attrs.addAttribute(XHTMLContentHandler.XHTML, "href", "", "", src.toString());
+                attrs.addAttribute(XHTMLContentHandler.XHTML, "download", "", "", attachmentName);
+                handler.startElement(XHTMLContentHandler.XHTML, "a", "a", attrs);
+                handler.characters(attachmentName.toCharArray(), 0, attachmentName.length());
+                handler.endElement(XHTMLContentHandler.XHTML, "a", "a");
+            }
+            handler.startElement(XHTMLContentHandler.XHTML, "br", "br", new AttributesImpl());
+            handler.endElement(XHTMLContentHandler.XHTML, "br", "br");
+        }
     }
 
     private static class ImageFilter extends XMLFilterImpl {
@@ -429,6 +441,7 @@ public class ContentRS {
             }
 
         }
+
     }
 
     @POST
@@ -453,8 +466,24 @@ public class ContentRS {
                             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(Json.createObjectBuilder().add("status", "error").add("message", errMessage).build()).build();
                         }
                     } else {
-                        fileNode = node.addNode(fileName, JcrConstants.NT_FILE);
-                        resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
+                        if ("/".equals(path)) {
+                            //adding files to the root node is tricky because the oakus-general group has limited access,  excluding JCR_MODIFY_ACCESS_CONTROL and JCR_MODIFY_PROPERTIES while originally including 
+                            //JCR_ADD_CHILD_NODES, JCR_REMOVE_CHILD_NODES and JCR_NODE_TYPE_MANAGEMENT. Since the JCR_MODIFY_PROPERTIES permission is not inherited to the new nodes required properties cannot be set 
+                            //and the oakus-general members would not be able to commit node updates. When adding file attachments to the root node change users to the super admin user and add an ACL on the file giving full
+                            //access to the group.
+                            session.logout();
+                            session = Subject.doAs(SystemSubject.INSTANCE, (PrivilegedExceptionAction<Session>) () -> (repository).login(null, null));
+                            node = session.getNode(path);
+                            fileNode = node.addNode(fileName, JcrConstants.NT_FILE);
+                            resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
+                            UserManager userManager = ((JackrabbitSession) session).getUserManager();
+                            Group general = userManager.getAuthorizable("qoakus-general", Group.class);
+                            AccessControlUtils.addAccessControlEntry(session, fileNode.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_ALL }, true);
+                        } else {
+                            fileNode = node.addNode(fileName, JcrConstants.NT_FILE);
+                            resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
+                        }
+
                     }
                     fileNode.addMixin("qo:fileType");
                     fileNode.setProperty("qo:fileType", fileType);
@@ -469,7 +498,9 @@ public class ContentRS {
             }
             session.save();
             return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok").build()).build();
-        } catch (Exception e) {
+        } catch (
+
+        Exception e) {
             logger.error("", e);
             JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();

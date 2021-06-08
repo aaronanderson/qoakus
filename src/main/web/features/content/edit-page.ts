@@ -57,9 +57,16 @@ export class EditPageElement extends ViewElement {
 	
 	static get styles() {
 	  return [super.styles,editorCSS, easymdeCSS, css `
-			.bi-file-plus-fill, .bi-file-minus-fill, .bi-mailbox2 {
-				transform: scale(2.0); 
+			.bi {
+				transform: scale(2.0); 			
+			 }
+		
+			 .bi-file-plus-fill, .bi-mailbox2 {
 				color: var(--bs-blue);			
+			 }
+		
+			 .bi-file-minus-fill {
+				color: var(--bs-red);			
 			 }
 		
 			 .bi-file-plus-fill, .bi-file-minus-fill {

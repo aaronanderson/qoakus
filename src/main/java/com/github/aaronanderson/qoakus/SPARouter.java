@@ -22,6 +22,7 @@ public class SPARouter {
        
         Handler<RoutingContext> indexHandler = ctx -> ctx.reroute("/index.html");
         router.route("/view*").handler(indexHandler);
+        router.route("/edit").handler(indexHandler);
     }
 
 }
