@@ -1,6 +1,6 @@
 # Qoakus
 
-A  Apache Jackrabbit Oak reference web application with an AWS backend running on Quarkus.
+An Apache Jackrabbit Oak reference web application with an AWS backend running on Quarkus.
 
 ## Features
 
@@ -10,7 +10,7 @@ Examine JCR node properties and related nodes. Binary file nodes containing Mark
 ![view](images/view.png)
 
 #### Hierarchical Navigation
-Navigate down and up the JCR node hierarchy.
+Navigate up and down the JCR node hierarchy.
 
 ![navigate](images/navigate.png)
 
@@ -22,13 +22,13 @@ Binary file nodes can be previewed using Apache Tika. Note that document formats
 ### Edit
 
 #### Markdown Editor
-A Javascript Markdown editor is used to manage node primary binary content inside the browser.
+A Javascript Markdown editor is used to manage Markdown binary JCR files inside the browser.
 
 ![preview](images/edit.png)
 
 #### Image Upload
 
-Images can be dragged and dropped to the Markdown editor or manually uploaded.
+Images can be dragged and dropped onto the Markdown editor or manually uploaded.
 
 #### Attachment Upload
 
@@ -45,7 +45,7 @@ Email messages from the Windows Outlook client can be dragged and dropped to the
 A Jackrabbit Oak [External Identity Provider](http://jackrabbit.apache.org/oak/docs/security/authentication/externalloginmodule.html) with credentials support for [Quarkus JWT tokens](https://quarkus.io/guides/security-openid-connect) is included for OIDC SSO. Edit the [application.properties](src/main/resources/application.properties) to configure and enable this feature.
 
 ### ACL
-A group, quarkus-general, is automatically created and assigned full permissions to all JCR root nodes except for a protected one setup for demonstration purposes.
+A group, qoakus-general, is automatically created and assigned full permissions to all JCR root nodes except for a protected one defined for demonstration purposes.
 
 ### User Management
 The [ResourceManager.java](src/main/java/com/github/aaronanderson/qoakus/RepositoryManager.java) class includes API calls for creating users and groups and assigning permissions to them.
@@ -60,7 +60,7 @@ The [oak-segment-aws](https://github.com/apache/jackrabbit-oak/tree/trunk/oak-se
 
 #### Setup
 
-Update the [application.properties](src/main/resources/application.properties) file and provide values for the qoakus.aws properties. The `qoakus.aws.filestore-path` property is optional since nothing gets written to it and a temporary directy will be used if a value is not provided.
+Update the [application.properties](src/main/resources/application.properties) file and provide values for the qoakus.aws properties. The `qoakus.aws.filestore-path` property is optional since nothing gets written to it due to the custom persistence configuration and a temporary directory will be used if a value is not provided.
 
 Jackrabbit Oak will automatically create the specified S3 bucket and DynamoDB tables if they do not exists. Take special care when setting these values and starting the Quarkus application for the first time.
 
