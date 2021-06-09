@@ -79,6 +79,10 @@ export class EditPageElement extends ViewElement {
 		`];
 	}
 	
+	static get fontAwesome() {
+		return html `<link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/font-awesome/latest/css/font-awesome.min.css"></link>`;	
+	}
+	
 	firstUpdated(){
 		//let EasyMDE add the fontawesome stylesheet to the document head for the @font-face reference. Also include fontawesome inline so that it gets added to the shadowDOM. 
 		//pass a custom image upload function so Lit can be refreshed on completion and a custom image relative path can be returned.
@@ -93,13 +97,11 @@ export class EditPageElement extends ViewElement {
 			readFile(this.details.mainContent).then((text: string) => {
 					this.easyMDE?.value(text);
 			});	
-		}
-		console.log(this.easyMDEElement);		 
+		}	 
 		this.easyMDEElement?.classList.add("form-control");		
 		
 		
 		this.easyMDE.codemirror.on("changes", (e: Editor, c: Array<EditorChange>) => {
-			console.log("MD changes", c);
 			if (c.find((c: any) => c.origin != "setValue")){
 				this.modified = true;
 			}			 
@@ -123,12 +125,12 @@ export class EditPageElement extends ViewElement {
 				<form class="needs-validation w-50">
 					<div class="form-group">
 						<label  for="contentTitle">Name</label>
-	    				<input class="form-control" type="text" required placeholder="Content Title" id="contentTitle" .value=${ifDefined(this.details?.title)} @change=${(e: Event) => this.modified = true}></input>
+	    				<input class="form-control" type="text" required ?disabled=${this.details && this.details.path=="/"} placeholder="Content Title" id="contentTitle" .value=${ifDefined(this.details?.title)} @change=${(e: Event) => this.modified = true}></input>
 					</div>
 					
 					
 					<div class="form-group">
-						<link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/font-awesome/latest/css/font-awesome.min.css"></link>
+						${EditPageElement.fontAwesome}
 						<label  for="contents">Content</label>						  
 	    				<textarea id="contents"></textarea>
 						<div id="validationServer03Feedback" class="invalid-feedback">Content required..</div>
@@ -216,6 +218,11 @@ export class EditPageElement extends ViewElement {
 		this.fileType= fileType;		
 		console.log("Add");
 		if (this.fileInputElement) {
+			if (fileType == "image"){
+				this.fileInputElement.setAttribute("accept","image/*" );
+			}else {
+				this.fileInputElement.removeAttribute("accept");
+			}
 			this.fileInputElement.click();
 		}
 	}
@@ -254,16 +261,14 @@ export class EditPageElement extends ViewElement {
 			isValid =  isValid && this.formElement.checkValidity();
 			this.formElement.classList.add('was-validated');			
 		}
-		if (isValid && this.details){
-				console.log("valid!");
-				const contentUpdate = <ContentDetails>{
-					path: this.details.path,
-					title: "",
-					mainContent: this.details.mainContent
-					
-				};
-				this.dispatch(saveContent(contentUpdate));	
-			} 
+		console.log("debug",isValid, this.details, this.details?.mainContent, this.easyMDE, this.contentTitleElement);
+		if (isValid && this.details && this.easyMDE && this.contentTitleElement){						
+			const newContent = new File([this.easyMDE.value()], "content.md", { type: "text/markdown", lastModified: new Date().getTime() });	
+			const contentUpdate  = Object.assign({}, this.details);
+			contentUpdate.title= this.contentTitleElement.value;
+			contentUpdate.mainContent = newContent;
+			this.dispatch(saveContent(contentUpdate)).then(()=> this.modified = false);	
+		} 
 		
 	}
 	

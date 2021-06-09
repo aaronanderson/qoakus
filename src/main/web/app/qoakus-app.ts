@@ -6,6 +6,7 @@ import {customElement, property} from 'lit/decorators.js';
 
 import '../features/content/view-page';
 import '../features/content/edit-page';
+import '../features/content/search-page';
 
 //@ts-ignore
 import {bootstrapRebootCSS, bootstrapCSS} from '../components/bootstrap';
@@ -42,6 +43,7 @@ export class AppElement extends LitElement {
       router.setRoutes([
         { path: '/', redirect: '/view/' },
 		{ path: '/edit', component: 'edit-page' },
+		{ path: '/search', component: 'search-page' },
 		{ path: '/view/(.*)', component: 'view-page' },
       ]);
 

@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -41,7 +42,10 @@ import javax.xml.transform.sax.TransformerHandler;
 import javax.xml.transform.stream.StreamResult;
 
 import org.apache.commons.collections4.map.HashedMap;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.http.HttpHost;
+import org.apache.http.HttpRequestInterceptor;
 import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.api.JackrabbitSession;
 import org.apache.jackrabbit.api.security.user.Group;
@@ -51,12 +55,22 @@ import org.apache.jackrabbit.commons.cnd.CndImporter;
 import org.apache.jackrabbit.commons.jackrabbit.authorization.AccessControlUtils;
 import org.apache.jackrabbit.oak.Oak;
 import org.apache.jackrabbit.oak.jcr.Jcr;
+import org.apache.jackrabbit.oak.plugins.index.elastic.ElasticConnection;
+import org.apache.jackrabbit.oak.plugins.index.elastic.ElasticMetricHandler;
+import org.apache.jackrabbit.oak.plugins.index.elastic.index.ElasticIndexEditorProvider;
+import org.apache.jackrabbit.oak.plugins.index.elastic.query.ElasticIndexProvider;
+import org.apache.jackrabbit.oak.plugins.index.nodetype.NodeTypeIndexProvider;
+import org.apache.jackrabbit.oak.plugins.index.property.PropertyIndexEditorProvider;
+import org.apache.jackrabbit.oak.plugins.index.search.ExtractedTextCache;
 import org.apache.jackrabbit.oak.security.authentication.user.LoginModuleImpl;
+import org.apache.jackrabbit.oak.segment.SegmentCache;
 import org.apache.jackrabbit.oak.segment.SegmentNodeStoreBuilders;
 import org.apache.jackrabbit.oak.segment.aws.AwsContext;
 import org.apache.jackrabbit.oak.segment.aws.AwsPersistence;
 import org.apache.jackrabbit.oak.segment.file.FileStore;
 import org.apache.jackrabbit.oak.segment.file.FileStoreBuilder;
+import org.apache.jackrabbit.oak.spi.commit.Observer;
+import org.apache.jackrabbit.oak.spi.query.QueryIndexProvider;
 import org.apache.jackrabbit.oak.spi.security.ConfigurationParameters;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityProvider;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityProviderManager;
@@ -70,10 +84,16 @@ import org.apache.jackrabbit.oak.spi.security.authentication.external.impl.Exter
 import org.apache.jackrabbit.oak.spi.security.authentication.external.impl.SyncManagerImpl;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
 import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
+import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestHighLevelClient;
 import org.jboss.logging.Logger;
 import org.xml.sax.SAXException;
 
+import com.amazonaws.auth.AWS4Signer;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
 import com.amazonaws.services.s3.AmazonS3;
@@ -111,6 +131,9 @@ public class RepositoryManager {
     @ConfigProperty(name = "qoakus.aws.filestore-path")
     Optional<String> fileStorePath;
 
+    @ConfigProperty(name = "qoakus.aws.es-host")
+    Optional<String> esHost;
+
     private Repository repository;
 
     private FileStore fileStore;
@@ -124,9 +147,16 @@ public class RepositoryManager {
                 AmazonS3 s3Client = AmazonS3ClientBuilder.standard().withRegion(region.get()).build();
                 AmazonDynamoDB dynamoDBClient = AmazonDynamoDBClientBuilder.standard().withRegion(region.get()).build();
                 AwsContext awsContext = AwsContext.create(s3Client, bucketName.get(), rootDirectory.get(), dynamoDBClient, journalTableName.get(), lockTableName.get());
-                AwsPersistence persistence = new AwsPersistence(awsContext);
-                Path fileStoreDir = fileStorePath.isPresent() ? Paths.get(fileStorePath.get()) : Files.createTempDirectory("qouakus");
-                fileStore = FileStoreBuilder.fileStoreBuilder(fileStoreDir.toFile()).withCustomPersistence(persistence).build();
+                AwsPersistence awsPersistence = new AwsPersistence(awsContext);
+
+                Path baseFileStoreDir = fileStorePath.isPresent() ? Paths.get(fileStorePath.get()) : Files.createTempDirectory("qouakus");
+                Path fileStorePath = baseFileStoreDir.resolve("local");
+                Files.createDirectories(fileStorePath);
+                fileStore = FileStoreBuilder.fileStoreBuilder(fileStorePath.toFile())
+                        .withCustomPersistence(awsPersistence)
+                        .withMemoryMapping(false)
+                        .withStrictVersionCheck(true)
+                        .withSegmentCacheSize(SegmentCache.DEFAULT_SEGMENT_CACHE_MB).build();
                 NodeStore nodeStore = SegmentNodeStoreBuilders.builder(fileStore).build();
                 oak = new Oak(nodeStore);
             } else {
@@ -168,15 +198,28 @@ public class RepositoryManager {
             //https://github.com/apache/jackrabbit-oak/blob/acdfc74012ebed033a34a78727579508919b1818/oak-benchmarks/src/main/java/org/apache/jackrabbit/oak/benchmark/authentication/external/AbstractExternalTest.java#L238
             //https://github.com/apache/jackrabbit-oak/blob/acdfc74012ebed033a34a78727579508919b1818/oak-benchmarks/src/main/java/org/apache/jackrabbit/oak/benchmark/authentication/external/AbstractExternalTest.java#L192
 
-            //https://forums.aws.amazon.com/thread.jspa?threadID=285934
-            /*ElasticConnection coordinate = ElasticConnection.newBuilder().withIndexPrefix("/").withConnectionParameters("https", "", 9000).withApiKeys(null, null);
-            ElasticIndexEditorProvider editorProvider = new ElasticIndexEditorProvider(coordinate, new ExtractedTextCache(10 * FileUtils.ONE_MB, 100));
-            ElasticIndexProvider indexProvider = new ElasticIndexProvider(coordinate, new ElasticMetricHandler(StatisticsProvider.NOOP));
-            oak.with(editorProvider)
-                .with((Observer) indexProvider)
-                .with((QueryIndexProvider) indexProvider)
-                .with(new PropertyIndexEditorProvider())
-                .with(new NodeTypeIndexProvider())*/
+            if (esHost.isPresent()) {
+                ElasticConnection coordinate = ElasticConnection.newBuilder().withIndexPrefix("/").withConnectionParameters("https", esHost.get(), 443).build();
+                //override the standard elasticsearch client with one configured for AWS ES.  ElasticConnection has a private constructor/is final so use reflection to set the new client for now.
+                //https://docs.aws.amazon.com/elasticsearch-service/latest/developerguide/es-request-signing.html
+                AWSCredentialsProvider credentialsProvider = new DefaultAWSCredentialsProviderChain();
+                AWS4Signer signer = new AWS4Signer();
+                signer.setServiceName("es");
+                signer.setRegionName(region.get());
+                HttpRequestInterceptor interceptor = new AWSRequestSigningApacheInterceptor("es", signer, credentialsProvider);
+                RestHighLevelClient awsClient = new RestHighLevelClient(RestClient.builder(new HttpHost(esHost.get(), 443, "https")).setHttpClientConfigCallback(hacb -> hacb.addInterceptorLast(interceptor)));
+                Field clientField = ElasticConnection.class.getDeclaredField("client");
+                clientField.setAccessible(true);
+                clientField.set(coordinate, awsClient);
+
+                ElasticIndexEditorProvider editorProvider = new ElasticIndexEditorProvider(coordinate, new ExtractedTextCache(10 * FileUtils.ONE_MB, 100));
+                ElasticIndexProvider indexProvider = new ElasticIndexProvider(coordinate, new ElasticMetricHandler(StatisticsProvider.NOOP));
+                oak.with(editorProvider)
+                        .with((Observer) indexProvider)
+                        .with((QueryIndexProvider) indexProvider)
+                        .with(new PropertyIndexEditorProvider())
+                        .with(new NodeTypeIndexProvider());
+            }
 
             repository = new Jcr(oak).createRepository();
 
@@ -184,6 +227,7 @@ public class RepositoryManager {
             //TODO the internal admin session should never be externally accessible outside the JVM but consider setting a different default userID/password combo, UserConstants.PARAM_ADMIN_ID, or omitting the password
             //UserConstants.PARAM_OMIT_ADMIN_PW and use the JVM Subject.doAS like https://github.com/apache/jackrabbit-oak/blob/acdfc74012ebed033a34a78727579508919b1818/oak-core/src/test/java/org/apache/jackrabbit/oak/security/user/UserInitializerTest.java#L176
 
+            //saveRepositoryXML(repository);
             Node root = session.getRootNode();
             if (!root.hasProperty("qo:title")) {
                 logger.infof("Performing one-time initial configuration");
@@ -228,7 +272,7 @@ public class RepositoryManager {
                 root.addMixin("qo:content");
                 root.setProperty("qo:title", "Main");
                 addFile(root, "md/main.md", "content.md", "text/markdown", "main", session);
-                AccessControlUtils.addAccessControlEntry(session, root.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_READ, }, true);
+                AccessControlUtils.addAccessControlEntry(session, root.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_READ, Privilege.JCR_ADD_CHILD_NODES, Privilege.JCR_REMOVE_CHILD_NODES }, true);
 
                 //String id =UUID.randomUUID().toString();
                 Node category = root.addNode(RandomStringUtils.random(10, true, true));
@@ -267,7 +311,7 @@ public class RepositoryManager {
                 //AccessControlUtils.grantAllToEveryone(session, "/");
                 //AccessControlUtils.denyAllToEveryone(session, "/");
 
-                saveRepositoryXML(repository);
+                //saveRepositoryXML(repository);
                 session.save();
 
             }
@@ -302,7 +346,7 @@ public class RepositoryManager {
 
     }
 
-    private void addFile(Node folderNode, String resourcePath, String fileName, String mimeType, String fileType, Session session) throws RepositoryException {
+    static void addFile(Node folderNode, String resourcePath, String fileName, String mimeType, String fileType, Session session) throws RepositoryException {
         Node fileNode = folderNode.addNode(fileName, JcrConstants.NT_FILE);
         fileNode.addMixin("qo:fileType");
         fileNode.setProperty("qo:fileType", fileType);

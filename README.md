@@ -17,7 +17,7 @@ Navigate up and down the JCR node hierarchy.
 #### Tika Preview
 Binary file nodes can be previewed using Apache Tika. Note that document formats will not be fully preserved as Tika is intended to be used primarily for content indexing and not full fidelity document conversion rendering.
 
-![preview](images/preview1.png)
+![preview](images/preview.png)
 
 ### Edit
 
@@ -53,6 +53,18 @@ The [ResourceManager.java](src/main/java/com/github/aaronanderson/qoakus/Reposit
 
 ## AWS
 
+### AWS CLI
+
+Install the [AWS CLI tool](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html). Run `aws configure` to set the access and secret keys in the local environment and make them available to the Qoakus application when it runs.
+
+```
+aws configure
+AWS Access Key ID [********************]:
+AWS Secret Access Key [********************]:
+Default region name [us-east-1]:
+Default output format [None]:
+```
+
 ### Custom Node Segment
 
 The [oak-segment-aws](https://github.com/apache/jackrabbit-oak/tree/trunk/oak-segment-aws) plugin is used to permanently persist JCR nodes in the Cloud. If no AWS configurations are present in the application.properties file the JCR repository will be created using in-memory storage.
@@ -63,6 +75,14 @@ The [oak-segment-aws](https://github.com/apache/jackrabbit-oak/tree/trunk/oak-se
 Update the [application.properties](src/main/resources/application.properties) file and provide values for the qoakus.aws properties. The `qoakus.aws.filestore-path` property is optional since nothing gets written to it due to the custom persistence configuration and a temporary directory will be used if a value is not provided.
 
 Jackrabbit Oak will automatically create the specified S3 bucket and DynamoDB tables if they do not exists. Take special care when setting these values and starting the Quarkus application for the first time.
+
+### Elasticsearch
+
+Create a new Elasticsearch domain in AWS.
+
+`aws es create-elasticsearch-domain --domain-name qoakus --elasticsearch-version 7.9 --elasticsearch-cluster-config InstanceType=t2.small.elasticsearch,InstanceCount=1,DedicatedMasterEnabled=false,ZoneAwarenessEnabled=false --ebs-options EBSEnabled=true,VolumeType=gp2,VolumeSize=10`
+
+
 
 ## Build and Run
 

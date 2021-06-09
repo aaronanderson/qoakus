@@ -57,7 +57,7 @@ export class ViewPageElement extends ViewElement {
 				${this.childTemplate}
 				
 				<div class="btn-group my-5" role="group" aria-label="Scripts">			  		
-					<button type="button" ?disabled=${!this.details} class="btn btn-primary m-2" @click=${(e: MouseEvent)=> this.dispatch(newContent(this.details?.parent))}>New</button>
+					<button type="button" ?disabled=${!this.details} class="btn btn-primary m-2" @click=${(e: MouseEvent)=> this.dispatch(newContent(this.details))}>New</button>
 					<button type="button" ?disabled=${!this.details} class="btn btn-secondary m-2" @click=${(e: MouseEvent)=> this.dispatch(editContent())}>Edit</button>
 					<button type="button" ?disabled=${!this.details || this.details.path =="/"} class="btn btn-danger m-2" @click=${(e: MouseEvent)=> this.dispatch(deleteContent(this.details?.path))}>Delete</button>
 				</div>

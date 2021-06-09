@@ -1,9 +1,12 @@
 package com.github.aaronanderson.qoakus;
 
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -45,6 +48,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.StreamingOutput;
 
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.api.JackrabbitSession;
 import org.apache.jackrabbit.api.security.user.Group;
@@ -98,7 +102,14 @@ public class ContentRS {
     @IdToken
     Instance<JsonWebToken> idToken;
 
-    private Session getSession() throws LoginException, RepositoryException {
+    private Session getSession(String path) throws LoginException, RepositoryException, PrivilegedActionException {
+        if ("/".equals(path)) {
+            //adding children to the root node is tricky because the oakus-general group has limited access,  excluding JCR_MODIFY_ACCESS_CONTROL and JCR_MODIFY_PROPERTIES while originally including 
+            //JCR_ADD_CHILD_NODES, JCR_REMOVE_CHILD_NODES and JCR_NODE_TYPE_MANAGEMENT. Since the JCR_MODIFY_PROPERTIES permission is not inherited to the new nodes required properties cannot be set 
+            //and the oakus-general members would not be able to commit node updates. When adding file attachments to the root node change users to the super admin user and add an ACL on the file giving full
+            //access to the group.                          
+            return Subject.doAs(SystemSubject.INSTANCE, (PrivilegedExceptionAction<Session>) () -> (repository).login(null, null));
+        }
         return getSession(idToken, repository);
     }
 
@@ -127,7 +138,8 @@ public class ContentRS {
             JsonArrayBuilder children = Json.createArrayBuilder();
             contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
 
-            Session session = getSession();
+            //always use the user's session for read-only access
+            Session session = getSession(idToken, repository);
             Node node = session.getNode(contentPath);
 
             if (contentPath.length() > 1) {
@@ -178,16 +190,53 @@ public class ContentRS {
     }
 
     @POST
-    @Path("{contentPath:.*}")
-    public Response newContent(@PathParam("contentPath") String contentPath) {
-        return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+    @Path("/")
+    public Response newContent(JsonObject request) {
+        return newContent("", request);
+    }
+
+    @POST
+    @Path("{parentContentPath:.*}")
+    public Response newContent(@PathParam("parentContentPath") String parentContentPath, JsonObject request) {
+        try {
+            String path = parentContentPath.startsWith("/") ? parentContentPath : "/" + parentContentPath;
+            Session session = getSession(path);
+            Node parentNode = session.getNode(path);
+            Node category = parentNode.addNode(RandomStringUtils.random(10, true, true));
+            category.addMixin("qo:content");
+            if (request.containsKey("title")) {
+                category.setProperty("qo:title", request.getString("title"));
+            }
+            UserManager userManager = ((JackrabbitSession) session).getUserManager();
+            Group general = userManager.getAuthorizable("qoakus-general", Group.class);
+            AccessControlUtils.addAccessControlEntry(session, category.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_ALL }, true);
+            session.save();
+            return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok").add("newPath", category.getPath()).build()).build();
+        } catch (Exception e) {
+            logger.error("", e);
+            JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
+        }
 
     }
 
     @PUT
     @Path("{contentPath:.*}")
-    public Response editContent(@PathParam("contentPath") String contentPath) {
-        return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+    public Response editContent(@PathParam("contentPath") String contentPath, JsonObject request) {
+        try {
+            String path = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
+            Session session = getSession(path);
+            Node node = session.getNode(path);
+            if (!"/".equals(path) && request.containsKey("title")) {
+                node.setProperty("qo:title", request.getString("title"));
+            }
+            session.save();
+            return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok").build()).build();
+        } catch (Exception e) {
+            logger.error("", e);
+            JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
+        }
 
     }
 
@@ -195,8 +244,8 @@ public class ContentRS {
     @Path("{contentPath:.*}")
     public Response deleteContent(@PathParam("contentPath") String contentPath) {
         try {
-            Session session = getSession();
             contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
+            Session session = getSession(contentPath);
             Node node = session.getNode(contentPath);
             node.remove();
             session.save();
@@ -212,12 +261,9 @@ public class ContentRS {
     @Path("/file{contentPath:.*}/{fileName}")
     public Response fileDownload(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
         try {
-
-            Session session = getSession();
             contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
-
+            Session session = getSession(contentPath);
             Node node = session.getNode(contentPath);
-
             if (node.hasNode(fileName)) {
                 Node ntFile = node.getNode(fileName);
                 Node ntResource = ntFile.getNode(JcrConstants.JCR_CONTENT);
@@ -227,7 +273,8 @@ public class ContentRS {
                 response.header("Content-Disposition", "attachment;filename=\"" + fileName + "\"");
                 // https://stackoverflow.com/a/49286437
                 response.header("Access-Control-Expose-Headers", "Content-Disposition");
-                response.entity(binary.getStream());
+                //Not sure why a BufferedInputStream is necessary here since the Oak node segment should be cached upstream but it does boost browser download performance.
+                response.entity(new BufferedInputStream(binary.getStream()));
                 response.type(mimeType);
                 return response.build();
             }
@@ -243,16 +290,13 @@ public class ContentRS {
     @Path("/raw{contentPath:.*}/{fileName}")
     public Response fileRaw(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
         try {
-
-            Session session = getSession();
             contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
-
+            Session session = getSession(contentPath);
             Node node = session.getNode(contentPath);
-
             if (node.hasNode(fileName)) {
                 Node ntFile = node.getNode(fileName);
                 Node ntResource = ntFile.getNode(JcrConstants.JCR_CONTENT);
-                String mimeType = ntResource.getProperty(JcrConstants.JCR_MIMETYPE).getString();
+                //String mimeType = ntResource.getProperty(JcrConstants.JCR_MIMETYPE).getString();
                 Binary binary = ntResource.getProperty(JcrConstants.JCR_DATA).getBinary();
 
                 ResponseBuilder response = Response.status(Response.Status.OK);
@@ -262,7 +306,7 @@ public class ContentRS {
                 //String text = parser.getText(binary.getStream(), handler);
                 StreamingOutput stream = (os) -> {
                     try {
-                        parseFile(binary.getStream(), os);
+                        parseFile(new BufferedInputStream(binary.getStream()), os);
                     } catch (RepositoryException | SAXException | TikaException e) {
                         throw new IOException(e);
                     }
@@ -449,8 +493,9 @@ public class ContentRS {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public Response fileUpload(@PathParam("contentPath") String contentPath, @MultipartForm MultipartFormDataInput input, @DefaultValue("attachment") @QueryParam("type") String fileType) {
         try {
-            Session session = getSession();
+
             String path = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
+            Session session = getSession(path);
             Node node = session.getNode(path);
             for (InputPart part : input.getParts()) {
                 String fileName = getFileName(part.getHeaders());
@@ -466,24 +511,11 @@ public class ContentRS {
                             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(Json.createObjectBuilder().add("status", "error").add("message", errMessage).build()).build();
                         }
                     } else {
-                        if ("/".equals(path)) {
-                            //adding files to the root node is tricky because the oakus-general group has limited access,  excluding JCR_MODIFY_ACCESS_CONTROL and JCR_MODIFY_PROPERTIES while originally including 
-                            //JCR_ADD_CHILD_NODES, JCR_REMOVE_CHILD_NODES and JCR_NODE_TYPE_MANAGEMENT. Since the JCR_MODIFY_PROPERTIES permission is not inherited to the new nodes required properties cannot be set 
-                            //and the oakus-general members would not be able to commit node updates. When adding file attachments to the root node change users to the super admin user and add an ACL on the file giving full
-                            //access to the group.
-                            session.logout();
-                            session = Subject.doAs(SystemSubject.INSTANCE, (PrivilegedExceptionAction<Session>) () -> (repository).login(null, null));
-                            node = session.getNode(path);
-                            fileNode = node.addNode(fileName, JcrConstants.NT_FILE);
-                            resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
-                            UserManager userManager = ((JackrabbitSession) session).getUserManager();
-                            Group general = userManager.getAuthorizable("qoakus-general", Group.class);
-                            AccessControlUtils.addAccessControlEntry(session, fileNode.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_ALL }, true);
-                        } else {
-                            fileNode = node.addNode(fileName, JcrConstants.NT_FILE);
-                            resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
-                        }
-
+                        fileNode = node.addNode(fileName, JcrConstants.NT_FILE);
+                        resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
+                        UserManager userManager = ((JackrabbitSession) session).getUserManager();
+                        Group general = userManager.getAuthorizable("qoakus-general", Group.class);
+                        AccessControlUtils.addAccessControlEntry(session, fileNode.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_ALL }, true);
                     }
                     fileNode.addMixin("qo:fileType");
                     fileNode.setProperty("qo:fileType", fileType);
@@ -498,9 +530,7 @@ public class ContentRS {
             }
             session.save();
             return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok").build()).build();
-        } catch (
-
-        Exception e) {
+        } catch (Exception e) {
             logger.error("", e);
             JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
@@ -512,8 +542,8 @@ public class ContentRS {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public Response fileMarkedUpload(@PathParam("contentPath") String contentPath, @MultipartForm MultipartFormDataInput input) {
         try {
-            Session session = getSession();
             String path = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
+            Session session = getSession(path);
             Node node = session.getNode(path);
             InputPart part = input.getParts().get(0);
 
@@ -540,9 +570,7 @@ public class ContentRS {
 
             session.save();
             return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok").add("fileName", fileName).build()).build();
-        } catch (
-
-        Exception e) {
+        } catch (Exception e) {
             logger.error("", e);
             JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
@@ -553,8 +581,8 @@ public class ContentRS {
     @Path("/file{contentPath:.*}/{fileName}")
     public Response fileDelete(@PathParam("contentPath") String contentPath, @PathParam("fileName") String fileName) {
         try {
-            Session session = getSession();
             contentPath = contentPath.startsWith("/") ? contentPath : "/" + contentPath;
+            Session session = getSession(contentPath);
             Node node = session.getNode(contentPath);
             Node fileNode = node.getNode(fileName);
             fileNode.remove();

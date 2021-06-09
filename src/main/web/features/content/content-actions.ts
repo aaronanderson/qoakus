@@ -56,7 +56,7 @@ export interface ContentState {
 
 export const fetchUser: any = () => async (dispatch: any, getState: any) => {
 	//cache the user
-	const existingUser = getState().contents?.user;
+	const existingUser = getState().content?.user;
 	if (!existingUser) {
 		dispatch({ type: FETCH_USER });
 
@@ -115,10 +115,9 @@ export const newContent: any = (parent: Content) => async (dispatch: any) => {
 	const newContentDetails = <ContentDetails>{
 		title: "",
 		path: "",
-		parent: parent,
+		parent: <Content>{ path: parent.path, title: parent.title },
 		files: [],
 		children: [],
-		mainContent: new File([], "content.md", { type: "text/markdown", lastModified: new Date().getTime() })
 	}
 	dispatch({ type: NEW_CONTENT, payload: { contentDetails: newContentDetails, editMode: EditMode.add } });
 	Router.go("/edit");
@@ -138,37 +137,46 @@ export const saveContent: any = (details: ContentDetails) => async (dispatch: an
 	dispatch({ type: SAVE_CONTENT });
 
 	try {
-		const { editMode } = getState().contents;
+		const { editMode } = getState().content;
 		let path = undefined;
+		let filePath = undefined;
 		let method = undefined;
-		if (editMode == EditMode.add && details.parent) {
-			path = details.parent.path;
+		let update = true;
+		if (editMode == EditMode.add) {
+			path = details.parent?.path;
 			method = "POST";
 		} else if (editMode == EditMode.update) {
 			path = details.path;
+			filePath = details.path;
+			update = path != "/";
 			method = "PUT";
 		} else {
 			throw Error("Unsupported edit mode " + editMode);
 		}
-		const saveRequest = <SaveRequest>{
-			title: details.title
-		};
-		const contentResponse = await fetch(`/api/content/${path}`, {
-			method: method,
-			headers: {
-				'Accept': 'application/json',
-			},
-			body: JSON.stringify(saveRequest)
-		});
-		const saveResult: SaveResult = await contentResponse.json();
-		if (saveResult.status == "error") {
-			throw Error(saveResult.message);
+		if (update) {
+			const saveRequest = <SaveRequest>{
+				title: details.title
+			};
+			const contentResponse = await fetch(`/api/content${path}`, {
+				method: method,
+				headers: {
+					'Accept': 'application/json',
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(saveRequest)
+			});
+			const saveResult: SaveResult = await contentResponse.json();
+			if (saveResult.status == "error") {
+				throw Error(saveResult.message);
+			}
+			if (editMode == EditMode.add) {
+				filePath = saveResult.newPath;
+			}
 		}
-		let contentDetails: any = Object.assign({}, saveResult);
-		delete contentDetails.status;
-		delete contentDetails.message;
 
-		dispatch({ type: SAVE_CONTENT_SUCCESS, payload: { contentDetails: contentDetails } });
+		await dispatch(fileUpload("main", filePath, [details.mainContent]));
+
+		dispatch({ type: SAVE_CONTENT_SUCCESS, payload: { contentDetails: details } });
 		//dispatch(fetchMainContent(contentDetails));
 	} catch (error) {
 		console.error('Error:', error);
@@ -182,7 +190,7 @@ export const deleteContent: any = (path: string) => async (dispatch: any) => {
 
 
 	try {
-		const contentResponse = await fetch(`/api/content/${path}`, {
+		const contentResponse = await fetch(`/api/content${path}`, {
 			method: 'DELETE',
 			headers: {
 				'Accept': 'application/json',
@@ -423,6 +431,7 @@ export interface SaveRequest {
 export interface SaveResult {
 	status: string;
 	message?: string;
+	newPath: string;
 }
 
 export interface FileUploadResult {
