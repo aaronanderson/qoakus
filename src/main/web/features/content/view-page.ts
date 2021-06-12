@@ -24,7 +24,6 @@ export class ViewPageElement extends ViewElement {
 	details?: ContentDetails;
 
 	onAfterEnter(location: RouterLocation, commands: EmptyCommands, router: Router) {
-		//console.log("dispatch", location.pathname, commands);
 		const path = location.pathname.substring(5);
 		this.dispatch(viewContent(path));
 		if (path =="/"){
@@ -48,9 +47,9 @@ export class ViewPageElement extends ViewElement {
 		return html`
 			${this.userTemplate}
 			${this.pageTitleTemplate}
-			${this.loadingTemplate}
-			${this.errorTemplate}
-			<div class="container">				
+			<div class="container">
+				${this.loadingTemplate}
+				${this.errorTemplate}				
 				${this.parentTemplate}
 				${this.detailsTemplate}
 				${this.filesTemplate}
@@ -60,6 +59,7 @@ export class ViewPageElement extends ViewElement {
 					<button type="button" ?disabled=${!this.details} class="btn btn-primary m-2" @click=${(e: MouseEvent)=> this.dispatch(newContent(this.details))}>New</button>
 					<button type="button" ?disabled=${!this.details} class="btn btn-secondary m-2" @click=${(e: MouseEvent)=> this.dispatch(editContent())}>Edit</button>
 					<button type="button" ?disabled=${!this.details || this.details.path =="/"} class="btn btn-danger m-2" @click=${(e: MouseEvent)=> this.dispatch(deleteContent(this.details?.path))}>Delete</button>
+					${ this.details?.path =="/"? html `<button type="button"  class="btn btn-info m-2" @click=${()=> Router.go("/search")}>Search</button>` : undefined}
 				</div>
 			</div>
 			
@@ -137,7 +137,6 @@ export class ViewPageElement extends ViewElement {
 
 	stateChanged(state: ContentStore) {
 		if (state.content) {
-			//console.log(state.content);
 			const { user, contentDetails, loading, errorMessage } = state.content;
 			this.user = user;
 			this.loading = loading;

@@ -7,6 +7,9 @@ export const FETCH_USER = 'FETCH_USER'
 export const FETCH_USER_SUCCESS = 'FETCH_USER_SUCCESS'
 export const FETCH_USER_ERROR = 'FETCH_USER_ERROR'
 
+export const SEARCH = 'SEARCH'
+export const SEARCH_SUCCESS = 'SEARCH_SUCCESS'
+export const SEARCH_ERROR = 'SEARCH_ERROR'
 
 export const VIEW_CONTENT = 'VIEW_CONTENT'
 export const VIEW_CONTENT_SUCCESS = 'VIEW_CONTENT_SUCCESS'
@@ -19,6 +22,7 @@ export const EDIT_CONTENT = 'EDIT_CONTENT'
 export const SAVE_CONTENT = 'SAVE_CONTENT'
 export const SAVE_CONTENT_SUCCESS = 'SAVE_CONTENT_SUCCESS'
 export const SAVE_CONTENT_ERROR = 'SAVE_CONTENT_ERROR'
+export const SEARCH_RESET = 'SEARCH_RESET'
 
 export const FILE_UPLOAD = 'FILE_UPLOAD'
 export const FILE_UPLOAD_SUCCESS = 'FILE_UPLOAD_SUCCESS'
@@ -50,6 +54,7 @@ export interface ContentState {
 
 	user?: User;
 
+	searchResults?: Array<Content>;
 
 }
 
@@ -83,7 +88,6 @@ export const fetchUser: any = () => async (dispatch: any, getState: any) => {
 
 
 export const viewContent: any = (path: string) => async (dispatch: any) => {
-	console.log("viewContent", path);
 	dispatch({ type: VIEW_CONTENT });
 
 	try {
@@ -111,7 +115,6 @@ export const viewContent: any = (path: string) => async (dispatch: any) => {
 }
 
 export const newContent: any = (parent: Content) => async (dispatch: any) => {
-	console.log("newContent", parent);
 	const newContentDetails = <ContentDetails>{
 		title: "",
 		path: "",
@@ -133,7 +136,6 @@ export const editContent: any = () => async (dispatch: any) => {
 
 
 export const saveContent: any = (details: ContentDetails) => async (dispatch: any, getState: any) => {
-	console.log("saveContent", details);
 	dispatch({ type: SAVE_CONTENT });
 
 	try {
@@ -185,9 +187,7 @@ export const saveContent: any = (details: ContentDetails) => async (dispatch: an
 }
 
 export const deleteContent: any = (path: string) => async (dispatch: any) => {
-	console.log("deleteContent", path);
 	dispatch({ type: DELETE_CONTENT });
-
 
 	try {
 		const contentResponse = await fetch(`/api/content${path}`, {
@@ -213,7 +213,6 @@ export const deleteContent: any = (path: string) => async (dispatch: any) => {
 
 
 export const fileUpload: any = (fileType: string, path: string, files: Array<File>) => async (dispatch: any, getState: any) => {
-	console.log("fileUpload", path, files);
 	dispatch({ type: FILE_UPLOAD });
 	path = path == "/" ? "" : path;
 	try {
@@ -292,7 +291,6 @@ export const imageUpload: any = (file: File, onSuccess: Function, onError: Funct
 
 
 export const fileDelete: any = (path: string, fileName: string) => async (dispatch: any, getState: any) => {
-	console.log("fileDelete", path, fileName);
 	dispatch({ type: FILE_DELETE });
 	path = path == "/" ? "" : path;
 	try {
@@ -317,22 +315,18 @@ export const fileDelete: any = (path: string, fileName: string) => async (dispat
 
 
 export const fetchMainContent: any = (contentDetails: ContentDetails) => async (dispatch: any) => {
-
 	dispatch({ type: MAIN_CONTENT });
-
 
 	try {
 		let content = undefined;
 		const mainFile = contentDetails.files.find((f: ContentFile) => f.fileType == "main");
 		if (mainFile) {
 			const path = contentDetails.path == "/" ? "" : contentDetails.path;
-			console.log("fetchMainContent - before", contentDetails, path, mainFile.name);
 			const fileResponse = await fetch(`/api/content/file${path}/${mainFile.name}`, {
 				method: 'GET',
 			});
 			const fileBlob: Blob = await fileResponse.blob();
 			content = new File([fileBlob], mainFile.name, { type: mainFile.mimeType, lastModified: mainFile.lastModified ? new Date(mainFile.lastModified).getTime() : undefined });
-			console.log("fetchMainContent", content);
 		}
 
 		dispatch({ type: MAIN_CONTENT_SUCCESS, payload: { path: contentDetails.path, content: content } });
@@ -340,6 +334,40 @@ export const fetchMainContent: any = (contentDetails: ContentDetails) => async (
 		console.error('Error:', error);
 		dispatch({ type: MAIN_CONTENT_ERROR, payload: { error: error } })
 	}
+}
+
+export const searchReset: any = () => async (dispatch: any, getState: any) => {
+	dispatch({ type: SEARCH_RESET });
+}
+	
+export const search: any = (searchText: string) => async (dispatch: any, getState: any) => {
+	//cache the user
+	dispatch({ type: SEARCH });
+
+	const searchRequest = <SearchRequest>{
+		value: searchText
+	}
+	try {
+		const contentResponse = await fetch(`/api/content/search`, {
+			method: 'POST',
+			headers: {
+				'Accept': 'application/json',
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(searchRequest)
+		});
+		const searchResults: SearchResults = await contentResponse.json();
+		if (searchResults.status == "error") {
+			throw Error(searchResults.message);
+		}
+
+		dispatch({ type: SEARCH_SUCCESS, payload: { searchResults: searchResults.results } });
+	} catch (error) {
+		console.error('Error:', error);
+		dispatch({ type: SEARCH_ERROR, payload: { error: error } })
+	}
+
+
 }
 
 export const readFile = (file: File): Promise<string> => {
@@ -419,6 +447,16 @@ export interface User {
 }
 
 
+export interface SearchRequest {
+	value: string;
+}
+
+export interface SearchResults {
+	status: string;
+	message?: string;
+	results: Array<Content>;
+}
+
 export interface ViewResult {
 	status: string;
 	message?: string;
@@ -480,4 +518,6 @@ export enum EditMode {
 	add = 'ADD',
 	update = 'UPDATE',
 }
+
+
 

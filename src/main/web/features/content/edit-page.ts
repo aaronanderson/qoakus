@@ -79,7 +79,7 @@ export class EditPageElement extends ViewElement {
 		`];
 	}
 	
-	static get fontAwesome() {
+	static get fontAwesome() { //add to a static property so it is only fetched once.
 		return html `<link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/font-awesome/latest/css/font-awesome.min.css"></link>`;	
 	}
 	
@@ -114,15 +114,16 @@ export class EditPageElement extends ViewElement {
 			return this.easyMDE?.codemirror.getWrapperElement().parentNode as HTMLElement;
 	}
 	
+	//boostrap submits forms on enter keypress so return false on submit to prevent a page reload.
 	render() {
 		return html`
 			
 			${this.pageTitleTemplate}
-			${this.loadingTemplate}
-			${this.errorTemplate}
 			<div class="container">
+				${this.loadingTemplate}
+				${this.errorTemplate}
 			
-				<form class="needs-validation w-50">
+				<form class="needs-validation w-75" onsubmit="return false;">
 					<div class="form-group">
 						<label  for="contentTitle">Name</label>
 	    				<input class="form-control" type="text" required ?disabled=${this.details && this.details.path=="/"} placeholder="Content Title" id="contentTitle" .value=${ifDefined(this.details?.title)} @change=${(e: Event) => this.modified = true}></input>
@@ -183,11 +184,9 @@ export class EditPageElement extends ViewElement {
 	}
 	
 	handleDrag(e: DragEvent){
-		console.log("Drag Over", e);
-		//(e as any).originalEvent.dataTransfer.dropEffect = 'copy';
 		if (e.dataTransfer){
 			 const isFile = e.dataTransfer.types.includes("Files");
-			console.log("Drag types", e.dataTransfer.types);
+			//console.log("Drag types", e.dataTransfer.types);
 			if (isFile){
 				e.dataTransfer.dropEffect = 'copy';
 				e.preventDefault();		
@@ -201,7 +200,7 @@ export class EditPageElement extends ViewElement {
 		if (e.dataTransfer){
 			for (let i=0; i<e.dataTransfer.items.length; i++){
 				let item = e.dataTransfer.items[i];
-				console.log("Dropped item", item.type, item.kind);
+				//console.log("Dropped item", item.type, item.kind);
 				if ("file"== item.kind){
 					let file = item.getAsFile();
 					if (file){
@@ -216,7 +215,6 @@ export class EditPageElement extends ViewElement {
 	
 	handleFileAdd(fileType: string){
 		this.fileType= fileType;		
-		console.log("Add");
 		if (this.fileInputElement) {
 			if (fileType == "image"){
 				this.fileInputElement.setAttribute("accept","image/*" );
@@ -230,14 +228,12 @@ export class EditPageElement extends ViewElement {
 	handleFileSelected() {
 		if (this.fileInputElement && this.fileInputElement.files && this.details){
 			const files = Array.from(this.fileInputElement.files);
-			console.log("Selected", files);	
 			this.dispatch(fileUpload(this.fileType, this.details.path, files));
 		}
 		this.fileType = undefined;
 	}
 	
 	handleFileRemove(c: ContentFile){		
-		console.log("Remove", c);
 		if (this.details){
 			this.dispatch(fileDelete(this.details.path, c.name));
 		}
@@ -261,9 +257,9 @@ export class EditPageElement extends ViewElement {
 			isValid =  isValid && this.formElement.checkValidity();
 			this.formElement.classList.add('was-validated');			
 		}
-		console.log("debug",isValid, this.details, this.details?.mainContent, this.easyMDE, this.contentTitleElement);
+		
 		if (isValid && this.details && this.easyMDE && this.contentTitleElement){						
-			const newContent = new File([this.easyMDE.value()], "content.md", { type: "text/markdown", lastModified: new Date().getTime() });	
+			const newContent = new File([this.easyMDE.value()], "content.md", { type: "text/x-web-markdown", lastModified: new Date().getTime() });	
 			const contentUpdate  = Object.assign({}, this.details);
 			contentUpdate.title= this.contentTitleElement.value;
 			contentUpdate.mainContent = newContent;

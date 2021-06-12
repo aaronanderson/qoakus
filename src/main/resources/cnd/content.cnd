@@ -14,9 +14,11 @@ https://github.com/apache/jackrabbit/blob/trunk/jackrabbit-core/src/main/resourc
     multiple
 
 
-[qo:fileType] > nt:file
+[qo:file] > nt:file
   mixin
   - qo:fileType (string)
-  primary mandatory
-  
+    primary mandatory   
+
+[qo:resource] > nt:resource  
+ 
   

@@ -1,6 +1,7 @@
 import {
 	ContentState, ContentFile,
 	FETCH_USER, FETCH_USER_SUCCESS, FETCH_USER_ERROR,
+	SEARCH, SEARCH_SUCCESS, SEARCH_ERROR, SEARCH_RESET,
 	VIEW_CONTENT, VIEW_CONTENT_SUCCESS, VIEW_CONTENT_ERROR,
 	NEW_CONTENT, EDIT_CONTENT,
 	FILE_UPLOAD, FILE_UPLOAD_SUCCESS, FILE_UPLOAD_ERROR,
@@ -14,7 +15,7 @@ import produce from 'immer'
 
 const initialState: ContentState = {
 	loading: false,
-	path: "/"
+	path: "/",
 
 
 }
@@ -40,6 +41,31 @@ const editor = (state: ContentState = initialState, action: any) => {
 				draft.loading = false;
 				break
 			}
+
+
+			case SEARCH: {
+				draft.errorMessage = undefined;
+				draft.searchResults = undefined;
+				draft.loading = true;
+				break
+			}
+			case SEARCH_SUCCESS: {
+				draft.errorMessage = undefined;
+				draft.searchResults = action.payload.searchResults;
+				draft.loading = false;
+				break
+			}
+			case SEARCH_ERROR: {
+				draft.errorMessage = action.payload.error;
+				draft.searchResults = undefined;
+				draft.loading = false;
+				break
+			}
+			case SEARCH_RESET: {
+				draft.searchResults = undefined;
+				break
+			}
+			
 			case VIEW_CONTENT: {
 				draft.errorMessage = undefined;
 				draft.loading = true;

@@ -1,7 +1,6 @@
 package com.github.aaronanderson.qoakus;
 
 import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,6 +25,12 @@ import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
+import javax.jcr.ValueFactory;
+import javax.jcr.query.Query;
+import javax.jcr.query.QueryManager;
+import javax.jcr.query.QueryResult;
+import javax.jcr.query.Row;
+import javax.jcr.query.RowIterator;
 import javax.jcr.security.Privilege;
 import javax.json.Json;
 import javax.json.JsonArrayBuilder;
@@ -160,7 +165,7 @@ public class ContentRS {
                     children.add(content);
                 } else if (child.isNodeType(JcrConstants.NT_FILE)) {
                     JsonObjectBuilder file = Json.createObjectBuilder();
-                    if (child.isNodeType("qo:fileType")) {
+                    if (child.isNodeType("qo:file")) {
                         file.add("fileType", child.getProperty("qo:fileType").getString());
                     }
                     Node ntResource = child.getNode(JcrConstants.JCR_CONTENT);
@@ -217,7 +222,6 @@ public class ContentRS {
             JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
         }
-
     }
 
     @PUT
@@ -237,7 +241,6 @@ public class ContentRS {
             JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
         }
-
     }
 
     @DELETE
@@ -323,6 +326,47 @@ public class ContentRS {
         }
     }
 
+    @POST
+    @Path("/search")
+    public Response search(JsonObject request) {
+        try {
+            //always use the user's session for read-only search
+            Session session = getSession(idToken, repository);
+            JsonArrayBuilder searchResults = Json.createArrayBuilder();
+
+            String queryText = "SELECT [jcr:path], [qo:title] FROM [qo:content] AS c WHERE c.[qo:title] like $likeText or contains(c.*, $containsText)";
+            //queryText = "EXPLAIN " + queryText;
+
+            QueryManager qm = session.getWorkspace().getQueryManager();
+            Query query = qm.createQuery(queryText, Query.JCR_SQL2);
+            ValueFactory valueFactory = session.getValueFactory();
+            String searchText = request.getString("value");
+            searchText = searchText.endsWith("%") ? searchText : searchText;
+            query.bindValue("likeText", valueFactory.createValue("%" + searchText + "%"));
+            query.bindValue("containsText", valueFactory.createValue(searchText));
+            QueryResult results = query.execute();
+            RowIterator iterator = results.getRows();
+            while (iterator.hasNext()) {
+                Row row = iterator.nextRow();
+                if (queryText.startsWith("EXPLAIN")) {
+                    logger.infof("Query Explaination: %s\n%s", row);
+                } else {
+                    JsonObjectBuilder rowJson = Json.createObjectBuilder();
+                    rowJson.add("title", row.getValue("qo:title").toString());
+                    rowJson.add("path", row.getValue(JcrConstants.JCR_PATH).getString());
+                    searchResults.add(rowJson);
+                }
+            }
+            return Response.status(Response.Status.OK).entity(Json.createObjectBuilder().add("status", "ok").add("results", searchResults).build()).build();
+        } catch (Exception e) {
+            logger.error("", e);
+            JsonObject status = Json.createObjectBuilder().add("status", "error").add("message", e.getMessage() != null ? e.getMessage() : "").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(status).build();
+        }
+    }
+
+    //supported MIME types - https://github.com/apache/tika/blob/main/tika-core/src/main/resources/org/apache/tika/mime/tika-mimetypes.xml
+    //Don't use the Quarkus Tika parser, directly configure it as needed instead.
     private void parseFile(InputStream is, OutputStream os) throws IOException, SAXException, TikaException {
         ParseContext context = new ParseContext();
 
@@ -499,6 +543,7 @@ public class ContentRS {
             Node node = session.getNode(path);
             for (InputPart part : input.getParts()) {
                 String fileName = getFileName(part.getHeaders());
+                String mimeType = String.format("%s/%s", part.getMediaType().getType(), part.getMediaType().getSubtype());
                 if (fileName != null) {
                     Node fileNode = null;
                     Node resNode = null;
@@ -512,19 +557,19 @@ public class ContentRS {
                         }
                     } else {
                         fileNode = node.addNode(fileName, JcrConstants.NT_FILE);
-                        resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
+                        String nodeType = "text/x-web-markdown".equals(mimeType) ? "qo:resource" : JcrConstants.NT_RESOURCE;
+                        resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, nodeType);
                         UserManager userManager = ((JackrabbitSession) session).getUserManager();
                         Group general = userManager.getAuthorizable("qoakus-general", Group.class);
                         AccessControlUtils.addAccessControlEntry(session, fileNode.getPath(), general.getPrincipal(), new String[] { Privilege.JCR_ALL }, true);
                     }
-                    fileNode.addMixin("qo:fileType");
+                    fileNode.addMixin("qo:file");
                     fileNode.setProperty("qo:fileType", fileType);
-                    resNode.setProperty(JcrConstants.JCR_MIMETYPE, String.format("%s/%s", part.getMediaType().getType(), part.getMediaType().getSubtype()));
+                    resNode.setProperty(JcrConstants.JCR_MIMETYPE, mimeType);
                     InputStream is = part.getBody(InputStream.class, null);
                     Binary contentValue = session.getValueFactory().createBinary(is);
                     resNode.setProperty(JcrConstants.JCR_DATA, contentValue);
                     Calendar lastModified = Calendar.getInstance();
-                    //lastModified.setTimeInMillis(file.lastModified());
                     resNode.setProperty(JcrConstants.JCR_LASTMODIFIED, lastModified);
                 }
             }
@@ -558,7 +603,7 @@ public class ContentRS {
             Node fileNode = node.addNode(fileName, JcrConstants.NT_FILE);
             Node resNode = fileNode.addNode(JcrConstants.JCR_CONTENT, JcrConstants.NT_RESOURCE);
 
-            fileNode.addMixin("qo:fileType");
+            fileNode.addMixin("qo:file");
             fileNode.setProperty("qo:fileType", "image");
             resNode.setProperty(JcrConstants.JCR_MIMETYPE, String.format("%s/%s", part.getMediaType().getType(), part.getMediaType().getSubtype()));
             InputStream is = part.getBody(InputStream.class, null);
@@ -597,7 +642,6 @@ public class ContentRS {
     }
 
     private String getFileName(MultivaluedMap<String, String> header) {
-
         String[] contentDisposition = header.getFirst("Content-Disposition").split(";");
 
         for (String filename : contentDisposition) {
