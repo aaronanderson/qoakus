@@ -50,12 +50,13 @@ public class OIDCIdentityProvider implements ExternalIdentityProvider, Principal
             return null;
         }
         String id = ref.getId();
+        //Not used without external EIP lookup.
         return null;
     }
 
     @Override
     public ExternalUser getUser(String userId) throws ExternalIdentityException {
-        // TODO Auto-generated method stub
+        //Not used without external EIP lookup.
         return null;
     }
 
@@ -69,17 +70,20 @@ public class OIDCIdentityProvider implements ExternalIdentityProvider, Principal
 
     @Override
     public ExternalGroup getGroup(String name) throws ExternalIdentityException {
+        //Not used without external EIP lookup.
         return null;
     }
 
     @Override
     public Iterator<ExternalUser> listUsers() throws ExternalIdentityException {
-        return null;
+        //Not used without external EIP lookup.
+        return Collections.emptyIterator();
     }
 
     @Override
     public Iterator<ExternalGroup> listGroups() throws ExternalIdentityException {
-        return null;
+        //Not used without external EIP lookup.
+        return Collections.emptyIterator();
     }
 
     private boolean isMyRef(ExternalIdentityRef ref) {

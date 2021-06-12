@@ -1,5 +1,6 @@
 package com.github.aaronanderson.qoakus.oidc;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -44,7 +45,7 @@ public class OIDCUser implements ExternalUser {
 
     @Override
     public Iterable<ExternalIdentityRef> getDeclaredGroups() throws ExternalIdentityException {
-        return null;
+        return Collections.emptyList();
     }
 
     @Override

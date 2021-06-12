@@ -72,7 +72,7 @@ The [oak-segment-aws](https://github.com/apache/jackrabbit-oak/tree/trunk/oak-se
 
 #### Setup
 
-Update the [application.properties](src/main/resources/application.properties) file and provide values for the qoakus.aws properties. The `qoakus.aws.filestore-path` property is optional since nothing gets written to it due to the custom persistence configuration and a temporary directory will be used if a value is not provided.
+Update the [application.properties](src/main/resources/application.properties) file and provide values for the qoakus.aws properties. The `qoakus.aws.filestore-path` property is optional and a temporary directory will be used if a value is not provided.
 
 Jackrabbit Oak will automatically create the specified S3 bucket and DynamoDB tables if they do not exists. Take special care when setting these values and starting the Quarkus application for the first time.
 
@@ -121,13 +121,15 @@ List all of the Elasticsearch aliases:
 
 View the index configuration for specific Oak index:
 
-`curl -X GET https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic.qocontent?pretty=true`
+`curl -X GET https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic._qocontent?pretty=true`
 
 View the documents in a specific index:
 
 `curl -X GET https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic._qocontent/_search?pretty=true`
 
 ### Cleanup
+
+During development it may be desirable to remove all of the existing Oak AWS services so that they can be re-created using new settings. For instance, testing new Oak index configurations. Run the commands below before restarting the application to remove all data stored in AWS.  
 
 ```
 aws s3 rm --recursive s3://XXXXXXXXX-jackrabbit-oak/oak;

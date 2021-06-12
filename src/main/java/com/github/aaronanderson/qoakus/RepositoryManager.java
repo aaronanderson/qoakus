@@ -342,8 +342,6 @@ public class RepositoryManager {
             //This rule is for instructing the aggregation below to include only binary types. Otherwise all nodes are included such as modifier, last modified date, etc.  
             //It is disable so that a separate indexed entry is not created for the jcr:content file itself. The file contents are only included in the aggregation leaving a single node with both file contents and title.
             idxb.indexRule("qo:resource").includePropertyTypes("Binary").property(JcrConstants.JCR_DATA).type("Binary").disable();
-
-            //not sure how to select a specific property for an aggregate. Currently it is pulling in all properties in the fulltext output
             idxb.aggregateRule("qo:content").include("include0").path("*/jcr:content");
             Tree index = croot.getTree("/").addChild("oak:index").addChild("qoContent");
             idxb.build(index);
