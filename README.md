@@ -121,11 +121,11 @@ List all of the Elasticsearch aliases:
 
 View the index configuration for specific Oak index:
 
-`curl -X GET https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic._qoglobalsearch?pretty=true`
+`curl -X GET https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic.qocontent?pretty=true`
 
 View the documents in a specific index:
 
-`curl -X GET https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic._qoglobalsearch/_search?pretty=true`
+`curl -X GET https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic._qocontent/_search?pretty=true`
 
 ### Cleanup
 
