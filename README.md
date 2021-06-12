@@ -1,6 +1,6 @@
 # Qoakus
 
-An Apache Jackrabbit Oak reference web application with an AWS backend running on Quarkus.
+An [Apache Jackrabbit Oak](https://jackrabbit.apache.org/oak/) reference web application with an AWS backend running on [Quarkus](https://quarkus.io/).
 
 ## Features
 
