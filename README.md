@@ -53,6 +53,11 @@ The [ResourceManager.java](src/main/java/com/github/aaronanderson/qoakus/Reposit
 
 ## AWS
 
+### Considerations
+
+Currently Jackrabbit Oak only supports [clustering](http://jackrabbit.apache.org/oak/docs/clustering.html) with MongoDB and RDBMS SQL. Support for clustered node storage may be possible in the [future](https://issues.apache.org/jira/browse/OAK-7932).  Having a single instance of Oak along with [Direct Binary Access](http://jackrabbit.apache.org/oak/docs/features/direct-binary-access.html) may be sufficient for limited deployments. If true clustering is required consider using the [RDBDocumentStore](http://jackrabbit.apache.org/oak/docs/nodestore/document/rdb-document-store.html#) along with [AWS RDS](https://aws.amazon.com/blogs/compute/introducing-the-serverless-lamp-stack-part-2-relational-databases/) using IAM authentication through a [JDBC connection](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.Connecting.Java.html). 
+
+
 ### AWS CLI
 
 Install the [AWS CLI tool](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html). Run `aws configure` to set the access and secret keys in the local environment and make them available to the Qoakus application when it runs.
