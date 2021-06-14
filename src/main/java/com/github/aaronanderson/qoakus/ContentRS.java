@@ -121,7 +121,6 @@ public class ContentRS {
     static Session getSession(Instance<JsonWebToken> idToken, Repository repository) throws LoginException, RepositoryException {
         if (idToken.isResolvable()) {
             Session session = repository.login(new OIDCTokenCredentials(idToken.get()));
-            //RepositoryManager.saveRepositoryXML(repository);
             return session;
         }
         return repository.login(new SimpleCredentials("test", "test".toCharArray()));
@@ -138,6 +137,7 @@ public class ContentRS {
     @Path("/{contentPath:.*}")
     public Response viewContent(@PathParam("contentPath") String contentPath) {
         try {
+            //RepositoryManager.saveRepositoryXML(repository);
             JsonObjectBuilder result = Json.createObjectBuilder();
             JsonArrayBuilder files = Json.createArrayBuilder();
             JsonArrayBuilder children = Json.createArrayBuilder();

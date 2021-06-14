@@ -125,7 +125,7 @@ View the index configuration for specific Oak index:
 
 View the documents in a specific index:
 
-`curl -X GET https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic._qocontent/_search?pretty=true`
+`curl -X GET https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic._qocontent/_search?pretty=true&size=100`
 
 ### Cleanup
 

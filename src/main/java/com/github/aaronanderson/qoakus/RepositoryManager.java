@@ -23,6 +23,7 @@ import javax.inject.Inject;
 import javax.jcr.Binary;
 import javax.jcr.NoSuchWorkspaceException;
 import javax.jcr.Node;
+import javax.jcr.PropertyType;
 import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
@@ -64,6 +65,7 @@ import org.apache.jackrabbit.oak.api.Root;
 import org.apache.jackrabbit.oak.api.Tree;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.jcr.Jcr;
+import org.apache.jackrabbit.oak.plugins.index.IndexConstants;
 import org.apache.jackrabbit.oak.plugins.index.elastic.ElasticConnection;
 import org.apache.jackrabbit.oak.plugins.index.elastic.ElasticMetricHandler;
 import org.apache.jackrabbit.oak.plugins.index.elastic.index.ElasticIndexEditorProvider;
@@ -74,6 +76,8 @@ import org.apache.jackrabbit.oak.plugins.index.property.PropertyIndexEditorProvi
 import org.apache.jackrabbit.oak.plugins.index.search.ExtractedTextCache;
 import org.apache.jackrabbit.oak.plugins.index.search.FulltextIndexConstants;
 import org.apache.jackrabbit.oak.plugins.index.search.util.IndexDefinitionBuilder;
+import org.apache.jackrabbit.oak.plugins.index.search.util.IndexDefinitionBuilder.AggregateRule;
+import org.apache.jackrabbit.oak.plugins.index.search.util.IndexDefinitionBuilder.IndexRule;
 import org.apache.jackrabbit.oak.plugins.memory.MemoryNodeStore;
 import org.apache.jackrabbit.oak.security.authentication.user.LoginModuleImpl;
 import org.apache.jackrabbit.oak.segment.SegmentCache;
@@ -309,7 +313,7 @@ public class RepositoryManager {
 
             session.save();
 
-            //saveRepositoryXML(repository);
+            saveRepositoryXML(repository);
 
         }
     }
@@ -338,15 +342,58 @@ public class RepositoryManager {
 
             IndexDefinitionBuilder idxb = esHost.isPresent() ? new ElasticIndexDefinitionBuilder() : new IndexDefinitionBuilder();
             idxb.async("async");
-            idxb.indexRule("qo:content").property("qo:title").nodeScopeIndex().analyzed().propertyIndex();
-            //This rule is for instructing the aggregation below to include only binary types. Otherwise all nodes are included such as modifier, last modified date, etc.  
-            //It is disable so that a separate indexed entry is not created for the jcr:content file itself. The file contents are only included in the aggregation leaving a single node with both file contents and title.
-            idxb.indexRule("qo:resource").includePropertyTypes("Binary").property(JcrConstants.JCR_DATA).type("Binary").disable();
-            idxb.aggregateRule("qo:content").include("include0").path("*/jcr:content");
-            Tree index = croot.getTree("/").addChild("oak:index").addChild("qoContent");
+            IndexRule rule = idxb.indexRule("qo:content");
+            rule.property("title", "qo:title").nodeScopeIndex().analyzed().propertyIndex();
+            rule.property("exclude", FulltextIndexConstants.REGEX_ALL_PROPS, true).excludeFromAggregation().disable();
+
+            rule = idxb.indexRule("nt:file");
+            rule.property("nodeName", ":nodeName").nodeScopeIndex().propertyIndex().disable();
+            rule.property("exclude", FulltextIndexConstants.REGEX_ALL_PROPS, true).excludeFromAggregation().propertyIndex().disable();
+
+            rule = idxb.indexRule("qo:resource");
+            rule.property("data", "jcr:data").nodeScopeIndex().propertyIndex().disable();
+            rule.property("exclude", FulltextIndexConstants.REGEX_ALL_PROPS, true).excludeFromAggregation().propertyIndex().disable();
+                       
+            rule = idxb.indexRule("nt:resource");
+            rule.property("exclude", FulltextIndexConstants.REGEX_ALL_PROPS, true).excludeFromAggregation().propertyIndex().disable();
+           
+
+            //aggregate at the file level. It is too challenging to aggregate at the parent content level due to duplicate fulltext values on the content and file nodes.
+            AggregateRule aggregate = idxb.aggregateRule("qo:content");
+            aggregate.include("include0").path("*");
+            aggregate.include("include1").path("*/jcr:content");
+            //AggregateRule aggregate = idxb.aggregateRule("nt:file");
+            //aggregate.include("include0").path("*/jcr:content");
+
+            Tree index = croot.getTree("/").addChild(IndexConstants.INDEX_DEFINITIONS_NAME).addChild("qoContent");
             idxb.build(index);
-            //add a primaryType on the aggregate. Currently unavailable on IndexDefinitionBuilder.AggregateRule.Include
-            index.getChild("aggregates").getChild("qo:content").getChild("include0").setProperty("primaryType", "qo:resource");
+            index.getChild("aggregates").getChild("qo:content").setProperty("reaggregateLimit", 0L);
+            index.getChild("aggregates").getChild("qo:content").getChild("include0").setProperty("primaryType", "nt:file");
+            index.getChild("aggregates").getChild("qo:content").getChild("include1").setProperty("primaryType", "qo:resource");
+
+            
+            //index.getChild("aggregates").getChild("nt:file").getChild("include1").setProperty("primaryType", "qo:resource");
+            
+
+            /*          
+
+            rule.property("data", "jcr:data").nodeScopeIndex();
+            rule.property("exclude", FulltextIndexConstants.REGEX_ALL_PROPS, true).excludeFromAggregation().disable();
+            
+            rule = idxb.indexRule("nt:resource");
+            rule.property("exclude", FulltextIndexConstants.REGEX_ALL_PROPS, true).excludeFromAggregation().disable();
+            
+            AggregateRule aggregate = idxb.aggregateRule("qo:content");
+            aggregate.include("include0").path("*");
+            aggregate = idxb.aggregateRule("nt:file");
+            aggregate.include("include0").path("jcr:content");
+            
+            Tree index = croot.getTree("/").addChild(IndexConstants.INDEX_DEFINITIONS_NAME).addChild("qoContent");
+            idxb.build(index);
+            index.getChild("aggregates").getChild("qo:content").setProperty("reaggregateLimit", 0L);
+            index.getChild("aggregates").getChild("nt:file").setProperty("reaggregateLimit", 0L);
+            index.getChild("aggregates").getChild("qo:content").getChild("include0").setProperty("primaryType", "nt:file");
+            index.getChild("aggregates").getChild("nt:file").getChild("include0").setProperty("primaryType", "qo:resource");*/
 
             //The Markdown MIME type is not supported by the current version of Tika so instruct Oak to map it to plain/text 
             Tree tika = index.addChild(FulltextIndexConstants.TIKA);
