@@ -1,35 +1,50 @@
 package com.github.aaronanderson.qoakus;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.reflect.Array;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
+import java.util.Set;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.event.Observes;
+import javax.enterprise.inject.Instance;
 import javax.enterprise.inject.Produces;
 import javax.inject.Inject;
 import javax.jcr.Binary;
 import javax.jcr.NoSuchWorkspaceException;
 import javax.jcr.Node;
-import javax.jcr.PropertyType;
 import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
 import javax.jcr.nodetype.NodeTypeManager;
 import javax.jcr.security.Privilege;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.auth.login.AppConfigurationEntry.LoginModuleControlFlag;
 import javax.security.auth.login.Configuration;
@@ -57,6 +72,7 @@ import org.apache.jackrabbit.api.security.user.UserManager;
 import org.apache.jackrabbit.commons.cnd.CndImporter;
 import org.apache.jackrabbit.commons.cnd.ParseException;
 import org.apache.jackrabbit.commons.jackrabbit.authorization.AccessControlUtils;
+import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.Oak;
 import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.api.ContentRepository;
@@ -64,7 +80,12 @@ import org.apache.jackrabbit.oak.api.ContentSession;
 import org.apache.jackrabbit.oak.api.Root;
 import org.apache.jackrabbit.oak.api.Tree;
 import org.apache.jackrabbit.oak.api.Type;
+import org.apache.jackrabbit.oak.blob.cloud.s3.S3Constants;
+import org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStore;
 import org.apache.jackrabbit.oak.jcr.Jcr;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreBlobStore;
+import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
+import org.apache.jackrabbit.oak.plugins.document.rdb.RDBDocumentNodeStoreBuilder;
 import org.apache.jackrabbit.oak.plugins.index.IndexConstants;
 import org.apache.jackrabbit.oak.plugins.index.elastic.ElasticConnection;
 import org.apache.jackrabbit.oak.plugins.index.elastic.ElasticMetricHandler;
@@ -80,13 +101,6 @@ import org.apache.jackrabbit.oak.plugins.index.search.util.IndexDefinitionBuilde
 import org.apache.jackrabbit.oak.plugins.index.search.util.IndexDefinitionBuilder.IndexRule;
 import org.apache.jackrabbit.oak.plugins.memory.MemoryNodeStore;
 import org.apache.jackrabbit.oak.security.authentication.user.LoginModuleImpl;
-import org.apache.jackrabbit.oak.segment.SegmentCache;
-import org.apache.jackrabbit.oak.segment.SegmentNodeStoreBuilders;
-import org.apache.jackrabbit.oak.segment.aws.AwsContext;
-import org.apache.jackrabbit.oak.segment.aws.AwsPersistence;
-import org.apache.jackrabbit.oak.segment.file.FileStore;
-import org.apache.jackrabbit.oak.segment.file.FileStoreBuilder;
-import org.apache.jackrabbit.oak.segment.file.InvalidFileStoreVersionException;
 import org.apache.jackrabbit.oak.spi.commit.Observer;
 import org.apache.jackrabbit.oak.spi.query.QueryIndexProvider;
 import org.apache.jackrabbit.oak.spi.security.ConfigurationParameters;
@@ -112,19 +126,21 @@ import org.xml.sax.SAXException;
 import com.amazonaws.auth.AWS4Signer;
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.github.aaronanderson.qoakus.oidc.OIDCIdentityProvider;
 
+import io.agroal.api.AgroalDataSource;
+import io.quarkus.runtime.LaunchMode;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
+import io.quarkus.runtime.configuration.ProfileManager;
 
 @ApplicationScoped
 public class RepositoryManager {
 
     static Logger logger = Logger.getLogger(RepositoryManager.class);
+
+    @Inject
+    Instance<AgroalDataSource> oakDataSource;
 
     @Inject
     OIDCIdentityProvider oidcIdp;
@@ -135,19 +151,11 @@ public class RepositoryManager {
     @ConfigProperty(name = "qoakus.aws.s3-bucket")
     Optional<String> bucketName;
 
-    //required, empty string not supported and results in invalid S3 paths like s3:bucket//log...
-    @ConfigProperty(name = "qoakus.aws.s3-root-dir")
-    Optional<String> rootDirectory;
-
-    @ConfigProperty(name = "qoakus.aws.dynamodb-journal-table-name")
-    Optional<String> journalTableName;
-
-    @ConfigProperty(name = "qoakus.aws.dynamodb-lock-table-name")
-    Optional<String> lockTableName;
-
-    //nothings is actually stored in this directory due to the custom persistence.
     @ConfigProperty(name = "qoakus.aws.filestore-path")
     Optional<String> fileStorePath;
+
+    @ConfigProperty(name = "quarkus.datasource.jdbc.additional-jdbc-properties.useSSL")
+    Optional<Boolean> useSSL;
 
     @ConfigProperty(name = "qoakus.aws.es-host")
     Optional<String> esHost;
@@ -155,10 +163,12 @@ public class RepositoryManager {
     private Oak oak;
     private Repository repository;
     private ContentRepository contentRepository;
-    private FileStore fileStore;
+    private S3DataStore s3DataStore;
+    private DocumentNodeStore documentStore;
 
     void onStart(@Observes StartupEvent ev) {
         try {
+            devModeFix();
             createOak();
             configureEIP();
             configureAWSElasticsearch();
@@ -174,26 +184,38 @@ public class RepositoryManager {
         }
     }
 
-    private Oak createOak() throws InvalidFileStoreVersionException, IOException {
+    private Oak createOak() throws IOException, DataStoreException {
         NodeStore nodeStore = null;
-        if (region.isPresent() && bucketName.isPresent() && rootDirectory.isPresent() && journalTableName.isPresent() && lockTableName.isPresent()) {
+        if (region.isPresent() && bucketName.isPresent() && oakDataSource.isResolvable()) {
             logger.infof("Configuring AWS persistence");
-            AmazonS3 s3Client = AmazonS3ClientBuilder.standard().withRegion(region.get()).build();
-            AmazonDynamoDB dynamoDBClient = AmazonDynamoDBClientBuilder.standard().withRegion(region.get()).build();
-            AwsContext awsContext = AwsContext.create(s3Client, bucketName.get(), rootDirectory.get(), dynamoDBClient, journalTableName.get(), lockTableName.get());
-            AwsPersistence awsPersistence = new AwsPersistence(awsContext);
+
+            if (useSSL.isPresent() && useSSL.get()) {
+                configureTrustStore();
+            }
 
             Path baseFileStoreDir = fileStorePath.isPresent() ? Paths.get(fileStorePath.get()) : Files.createTempDirectory("qouakus");
-            Path fileStorePath = baseFileStoreDir.resolve("local");
-            Files.createDirectories(fileStorePath);
-            fileStore = FileStoreBuilder.fileStoreBuilder(fileStorePath.toFile())
-                    .withCustomPersistence(awsPersistence)
-                    .withMemoryMapping(false)
-                    .withStrictVersionCheck(true)
-                    .withSegmentCacheSize(SegmentCache.DEFAULT_SEGMENT_CACHE_MB).build();
-            nodeStore = SegmentNodeStoreBuilders.builder(fileStore).build();
+            Path blobStorePath = baseFileStoreDir.resolve("blob");
+            Files.createDirectories(blobStorePath);
 
+            s3DataStore = new S3DataStore();
+            Properties props = new Properties();
+            props.setProperty(S3Constants.S3_BUCKET, bucketName.get());
+            props.setProperty(S3Constants.S3_REGION, region.get());
+            //these are required
+            props.setProperty(S3Constants.S3_CONN_TIMEOUT, "120000");
+            props.setProperty(S3Constants.S3_SOCK_TIMEOUT, "120000");
+            props.setProperty(S3Constants.S3_MAX_CONNS, "10");
+            props.setProperty(S3Constants.S3_MAX_ERR_RETRY, "10");
+            props.setProperty(S3Constants.S3_WRITE_THREADS, "10");
+
+            s3DataStore.setProperties(props);
+            s3DataStore.init(blobStorePath.toAbsolutePath().toString());
+
+            documentStore = RDBDocumentNodeStoreBuilder.newRDBDocumentNodeStoreBuilder().setRDBConnection(oakDataSource.get()).setBlobStore(new DataStoreBlobStore(s3DataStore)).build();
+            nodeStore = documentStore;
+            logger.infof("Completed configuring AWS persistence");
         } else {
+            logger.infof("Configuring in-memory storage");
             nodeStore = new MemoryNodeStore();
         }
 
@@ -203,6 +225,7 @@ public class RepositoryManager {
     }
 
     private void configureEIP() {
+        logger.infof("Configuring the custom EIP");
         //Setup an ExteralLoginModule
         //http://jackrabbit.apache.org/oak/docs/security/authentication.html
         Configuration c = new Configuration() {
@@ -242,6 +265,7 @@ public class RepositoryManager {
 
     private void configureAWSElasticsearch() throws NoSuchFieldException, IllegalAccessException {
         if (esHost.isPresent()) {
+            logger.infof("Configuring AWS Elasticsearch");
             ElasticConnection coordinate = ElasticConnection.newBuilder().withIndexPrefix("oak-elastic").withConnectionParameters("https", esHost.get(), 443).build();
             //override the standard elasticsearch client with one configured for AWS ES.  ElasticConnection has a private constructor/is final so use reflection to set the new client for now.
             //https://docs.aws.amazon.com/elasticsearch-service/latest/developerguide/es-request-signing.html
@@ -313,12 +337,15 @@ public class RepositoryManager {
 
             session.save();
 
-            saveRepositoryXML(repository);
+            //saveRepositoryXML(repository);
+
+            logger.infof("One-time initialization complete");
 
         }
     }
 
     private void loadCND(Session session) throws RepositoryException, ParseException, IOException {
+        logger.infof("Loading custom CND");
         NodeTypeManager nodeTypeManager = session.getWorkspace().getNodeTypeManager();
         if (!nodeTypeManager.hasNodeType("qo:ContentType")) {
             InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream("cnd/content.cnd");
@@ -337,6 +364,7 @@ public class RepositoryManager {
     }
 
     private void createIndexes(SimpleCredentials adminCredentials) throws LoginException, NoSuchWorkspaceException, IOException, CommitFailedException {
+        logger.infof("Creating custom indexes");
         try (ContentSession crsession = contentRepository.login(adminCredentials, null)) {
             Root croot = crsession.getLatestRoot();
 
@@ -353,10 +381,9 @@ public class RepositoryManager {
             rule = idxb.indexRule("qo:resource");
             rule.property("data", "jcr:data").nodeScopeIndex().propertyIndex().disable();
             rule.property("exclude", FulltextIndexConstants.REGEX_ALL_PROPS, true).excludeFromAggregation().propertyIndex().disable();
-                       
+
             rule = idxb.indexRule("nt:resource");
             rule.property("exclude", FulltextIndexConstants.REGEX_ALL_PROPS, true).excludeFromAggregation().propertyIndex().disable();
-           
 
             //aggregate at the file level. It is too challenging to aggregate at the parent content level due to duplicate fulltext values on the content and file nodes.
             AggregateRule aggregate = idxb.aggregateRule("qo:content");
@@ -371,12 +398,10 @@ public class RepositoryManager {
             index.getChild("aggregates").getChild("qo:content").getChild("include0").setProperty("primaryType", "nt:file");
             index.getChild("aggregates").getChild("qo:content").getChild("include1").setProperty("primaryType", "qo:resource");
 
-            
             //index.getChild("aggregates").getChild("nt:file").getChild("include1").setProperty("primaryType", "qo:resource");
-            
 
             /*          
-
+            
             rule.property("data", "jcr:data").nodeScopeIndex();
             rule.property("exclude", FulltextIndexConstants.REGEX_ALL_PROPS, true).excludeFromAggregation().disable();
             
@@ -411,6 +436,7 @@ public class RepositoryManager {
     }
 
     private void populateRepository(Node root, Session session, Group general) throws RepositoryException {
+        logger.infof("Populating the repository with sample content");
         root.addMixin("qo:content");
         root.setProperty("qo:title", "Main");
         addFile(root, "md/main.md", "content.md", "text/x-web-markdown", "main", true, true, session);
@@ -503,11 +529,113 @@ public class RepositoryManager {
     }
 
     void onShutdown(@Observes ShutdownEvent ev) {
-        //It is very important to cleanly shutdown the filestore/AWS persistence. Otherwise a lengthy recovery will occur on the next startup.
-        if (fileStore != null) {
-            fileStore.close();
+        try {
+            if (s3DataStore != null) {
+                s3DataStore.close();
+            }
+            if (documentStore != null) {
+                documentStore.dispose();
+            }
+        } catch (Exception e) {
+            logger.error("Shutdown error", e);
+            e.printStackTrace();
         }
 
+    }
+
+    private static void devModeFix() throws Exception {
+        //Technically a Quarkus extension should be developed to apply the Oak bytecode manipulation at build time but that is overkill for a small project like this.
+        //The GuavaFix class is run during the Maven build and adds the updated classes to the target/classes directory where they are packaged and used in Quarkus prod mode.
+        //Quarkus dev mode bans target/classes files since they should be hot reloadable by Quarkus and it extensions. If they are attempted to be loaded a CNF is thrown. 
+        //Hack the QuarkusClassLoader to prevent that from happening. Since Quarkus classloading is done in a parent classloader unavailable to the runtime classloader use reflection. 
+        if (ProfileManager.getLaunchMode() == LaunchMode.DEVELOPMENT) {
+            ClassLoader qcl = Thread.currentThread().getContextClassLoader().getParent();
+            Class classPathElement = qcl.loadClass("io.quarkus.bootstrap.classloading.ClassPathElement");
+            Method fromPatheMethod = classPathElement.getDeclaredMethod("fromPath", Path.class);
+            Object classesPathElement = fromPatheMethod.invoke(null, Paths.get("classes").toAbsolutePath());
+
+            Method stateMethod = qcl.getClass().getDeclaredMethod("getState");
+            stateMethod.setAccessible(true);
+            Object state = stateMethod.invoke(qcl);
+            Field bannedResourcesField = state.getClass().getDeclaredField("bannedResources");
+            bannedResourcesField.setAccessible(true);
+            Field loadableResourcesField = state.getClass().getDeclaredField("loadableResources");
+            loadableResourcesField.setAccessible(true);
+            Set<String> bannedResources = (Set<String>) bannedResourcesField.get(state);
+            Map<String, Object> loadableResources = (Map<String, Object>) loadableResourcesField.get(state);
+
+            Iterator<String> bannedIterator = bannedResources.iterator();
+            while (bannedIterator.hasNext()) {
+                String bannedClass = bannedIterator.next();
+                if (bannedClass.startsWith("org/")) {
+                    bannedIterator.remove();
+                    Object classPathElementArray = Array.newInstance(classPathElement, 1);
+                    Array.set(classPathElementArray, 0, classesPathElement);
+                    loadableResources.put(bannedClass, classPathElementArray);
+                }
+            }
+
+        }
+    }
+
+    //SSL Trust Manager setup
+    //https://stackoverflow.com/a/62586564/15900194
+    public static void configureTrustStore() {
+        try (InputStream myKeys = Thread.currentThread().getContextClassLoader().getResourceAsStream("truststore.jks")) {
+            X509TrustManager jreTrustManager = findDefaultTrustManager(null);
+
+            KeyStore myTrustStore = KeyStore.getInstance("jks");
+            myTrustStore.load(myKeys, "qoakus".toCharArray());
+            X509TrustManager customTrustManager = findDefaultTrustManager(myTrustStore);
+
+            X509TrustManager mergedTrustManager = new X509TrustManager() {
+                @Override
+                public X509Certificate[] getAcceptedIssuers() {
+                    // If you're planning to use client-cert auth,
+                    // merge results from "defaultTm" and "myTm".
+                    return jreTrustManager.getAcceptedIssuers();
+                }
+
+                @Override
+                public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                    try {
+                        customTrustManager.checkServerTrusted(chain, authType);
+                    } catch (CertificateException e) {
+                        // This will throw another CertificateException if this fails too.
+                        jreTrustManager.checkServerTrusted(chain, authType);
+                    }
+                }
+
+                @Override
+                public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                    // If you're planning to use client-cert auth,
+                    // do the same as checking the server.
+                    jreTrustManager.checkClientTrusted(chain, authType);
+                }
+
+            };
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, new TrustManager[] { mergedTrustManager }, null);
+
+            // You don't have to set this as the default context,
+            // it depends on the library you're using.
+            SSLContext.setDefault(sslContext);
+        } catch (Exception e) {
+
+        }
+    }
+
+    private static X509TrustManager findDefaultTrustManager(KeyStore keyStore)
+            throws NoSuchAlgorithmException, KeyStoreException {
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(keyStore); // If keyStore is null, tmf will be initialized with the default trust store
+
+        for (TrustManager tm : tmf.getTrustManagers()) {
+            if (tm instanceof X509TrustManager) {
+                return (X509TrustManager) tm;
+            }
+        }
+        return null;
     }
 
 }

@@ -407,7 +407,6 @@ export const markedRenderer = (basePath?: string) => {
 	};
 
 	renderer.image = (href: string, title: string, text: string) => {
-		console.log("marked image", href, title, text);
 		if (href && !regularExpressionForURL.test(href)) {
 			href = baseUrl + href;
 			//https://github.com/markedjs/marked/issues/339#issuecomment-479347433

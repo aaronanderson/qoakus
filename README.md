@@ -50,12 +50,22 @@ A group, qoakus-general, is automatically created and assigned full permissions 
 ### User Management
 The [ResourceManager.java](src/main/java/com/github/aaronanderson/qoakus/RepositoryManager.java) class includes API calls for creating users and groups and assigning permissions to them.
 
+## Limitation
+| :exclamation:  Apache Oak Jackrabbit Guava version Workaround  |
+|----------------------------------------------------------------|
+
+[OAK-7182 - Make it possible to update Guava](https://issues.apache.org/jira/browse/OAK-7182) is still an open issue to refactor Oak to reduce dependencies on Guava and allow applications that embed Oak to use more recent versions of Guava. While much progress has been made and Oak is fully functional with the latest version of Guava using Segment Node Stores (see the aws_standalone branch) the Document Store implementation is older and still has a few references to obsolete Guava method references. Rather than attempting to fork Oak and apply patches this application uses ASM to perform light Java bytecode modification and correct the Guava method call signatures so that the application can depend on published versions of Oak.
+
+The modification of the bytecode and placement of the resulting class files in the target/classes directory works fine for Quarkus production mode where the application is bundled together but in Quarkus devMode there is a problem with class hot reloading. DevMode will throw an exception if a class in the target/classes directory is attempted to be loaded because the Quarkus devMode framework and extensions should hot reload the class file upon modification. Instead of building an elaborate multi-module Quarkus extension a check is made in the application to see if Quarkus is running in devMode and if so the QuarkusClassLoader is hacked through Java reflection to load the classes from the desired directory.
+
+Once OAK-7182 progresses far enough to use the latest version of Guava without issue all of these workarounds can be removed.
+
 
 ## AWS
 
 ### Considerations
 
-Currently Jackrabbit Oak only supports [clustering](http://jackrabbit.apache.org/oak/docs/clustering.html) with MongoDB and RDBMS SQL. Support for clustered node storage may be possible in the [future](https://issues.apache.org/jira/browse/OAK-7932).  Having a single instance of Oak along with [Direct Binary Access](http://jackrabbit.apache.org/oak/docs/features/direct-binary-access.html) may be sufficient for limited deployments. If true clustering is required consider using the [RDBDocumentStore](http://jackrabbit.apache.org/oak/docs/nodestore/document/rdb-document-store.html#) along with [AWS RDS](https://aws.amazon.com/blogs/compute/introducing-the-serverless-lamp-stack-part-2-relational-databases/) using IAM authentication through a [JDBC connection](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.Connecting.Java.html). 
+Currently Jackrabbit Oak only supports [clustering](http://jackrabbit.apache.org/oak/docs/clustering.html) with MongoDB and RDBMS SQL. Support for clustered node storage may be possible in the [future](https://issues.apache.org/jira/browse/OAK-7932).  Having a single instance of Oak along with [Direct Binary Access](http://jackrabbit.apache.org/oak/docs/features/direct-binary-access.html) may be sufficient for limited deployments.If so please review the [aws_standalone](https://github.com/aaronanderson/qoakus/tree/aws_standalone) branch.
 
 
 ### AWS CLI
@@ -70,18 +80,97 @@ Default region name [us-east-1]:
 Default output format [None]:
 ```
 
-### Custom Node Segment
+### RDB DocumentStore
 
-The [oak-segment-aws](https://github.com/apache/jackrabbit-oak/tree/trunk/oak-segment-aws) plugin is used to permanently persist JCR nodes in the Cloud. If no AWS configurations are present in the application.properties file the JCR repository will be created using in-memory storage.
+The [oak-segment-aws](http://jackrabbit.apache.org/oak/docs/nodestore/document/rdb-document-store.html) plugin is used to permanently persist JCR nodes in a SQL RDBMS. This example application uses [AWS Aurora](https://aws.amazon.com/rds/aurora)
+
+#### AWS Aurora
+
+Run this command to create a new AWS network security group. Replace vpc-xxxxxx with the default VPC id for the region. Go to the VPC service and select "Your VPCs" to identify the default value.  Record the group ID when the group is created. The last command provides an IP whitelist into the VPC network. Leave the /32 suffix for a single IP value.
+`aws ec2 create-security-group --description "Qoakus RDS Network Rules" --vpc-id vpc-xxxxxxxx --group-name  qoakus
+aws ec2 create-tags --tags Key=Name,Value=qoakus --resources sg-xxxxxxxxxxxxxxxxx
+aws ec2 authorize-security-group-ingress --group-id sg-xxxxxxxxxxxxxxxxx --protocol tcp --port 3306 --cidr XXX.XXX.XXX.XXX/32
+`
+
+Run the following commands to create a new Aurora database cluster. Specify a strong password and include the appropriate VPC and network security group IDs.
+
+```
+aws rds create-db-cluster \
+--db-cluster-identifier qoakus-cluster \
+--engine aurora-mysql \
+--engine-version 5.7.mysql_aurora.2.10.0 \
+--master-username qoadmin \
+--master-user-password xxxxxxxxxxxx \
+--db-subnet-group-name default \
+--vpc-security-group-ids sg-xxxxxxxxxxxxxxxxx \
+--enable-iam-database-authentication
+
+```
+
+Run the following command to create a database instance.
+
+```
+aws rds create-db-instance \
+    --db-instance-class db.t3.small \
+    --db-instance-identifier qoakus-instance \
+    --engine aurora-mysql  \
+    --db-cluster-identifier qoakus-cluster
+
+```
+Enable public access to the DB instance. The security group inbound/ingress rules IP whitelisting still apply and password authentication is still needed so the instance is not wide open. In a production environment where an application is deployed to ECS and is stable consider  disabling public access (--no-publicly-accessible) so only internal AWS access is allowed.
+
+`aws rds modify-db-instance --db-instance-identifier qoakus-instance --publicly-accessible`
+
+After the instance is created run the command
+
+`aws rds describe-db-instances --filters "Name=engine,Values=aurora-mysql"  --query "*[].[DBInstanceIdentifier,Endpoint.Address,Endpoint.Port,MasterUsername]"`
+
+and capture the instance's endpoint information including the address and port.
+
+Install the mysql client if needed:
+
+`sudo apt-get install mysql-client`
+
+Connect to the database:
 
 
-#### Setup
+`mysql -h qoakus-instance.xxxxxxxxxxxxx.us-west-1.rds.amazonaws.com -P 3306 -u qoadmin -p`
 
-Update the [application.properties](src/main/resources/application.properties) file and provide values for the qoakus.aws properties. The `qoakus.aws.filestore-path` property is optional and a temporary directory will be used if a value is not provided.
+enter the qoadmin password.
 
-Jackrabbit Oak will automatically create the specified S3 bucket and DynamoDB tables if they do not exists. Take special care when setting these values and starting the Quarkus application for the first time.
+Create the Oak database:
 
-### Elasticsearch
+`create database oak DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; exit;`
+
+Optionally create a login configuration file for promptless authentication:
+
+`mysql_config_editor set --login-path=qoakus --host=qoakus-instance.xxxxxxxxxxxx.us-west-1.rds.amazonaws.com --port=3306 --user=qoadmin --password`
+
+`mysql --login-path=qoakus`
+
+#### TLS (Optional)
+
+| :exclamation:  TLS Performance may be poor outside of the AWS datacenter and with a minimal RDS instance class.  |
+|------------------------------------------------------------------------------------------------------------------|
+
+Unless it is required leave TLS off.
+
+To enable TLS on the JDBC connection between the application and AWS RDS set the following [application.properties](src/main/resources/application.properties):
+
+```
+quarkus.datasource.jdbc.additional-jdbc-properties.useSSL=true
+quarkus.datasource.jdbc.additional-jdbc-properties.enabledTLSProtocols=TLSv1.2
+```
+
+AWS RDS use self signed certificates that have root CAs not typically found in the default JDK cacerts. This application will register a custom X509TrustManager that will load the AWS certs from the classpath if database TLS is enabled.
+
+Download the [AWS certificate bundile](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html) for the region the database is hosted in. Follow the [MySQL](https://dev.mysql.com/doc/connector-j/5.1/en/connector-j-reference-using-ssl.html) SSL guide and perform the following command:
+
+`keytool -importcert -alias aws-rds -file ~/Downloads/us-west-1-bundle.pem  -keystore src/main/resources/truststore.jks -storepass qoakus`
+
+Restart the application.
+
+### Elasticsearch (Optional)
 
 Create a new Elasticsearch domain in AWS.
 
@@ -132,14 +221,21 @@ View the documents in a specific index:
 
 `curl -X GET https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic._qocontent/_search?pretty=true&size=100`
 
+#### Application Configuration
+
+Update the [application.properties](src/main/resources/application.properties) file and provide values for the qoakus.aws and quarkus.datasource properties.
+
+Jackrabbit Oak will automatically create the specified S3 bucket, RDS database tables, and Elasticsearch index if they do not exists. Take special care when setting these values and starting the Quarkus application for the first time.
+
+
 ### Cleanup
 
-During development it may be desirable to remove all of the existing Oak AWS services so that they can be re-created using new settings. For instance, testing new Oak index configurations. Run the commands below before restarting the application to remove all data stored in AWS.  
+During development it may be desirable to remove all of the existing Oak AWS service configurations so that they can be re-created using new settings. For instance, testing new Oak index configurations. Run the commands below before restarting the application to remove all data stored in AWS.  
 
 ```
 aws s3 rm --recursive s3://XXXXXXXXX-jackrabbit-oak/oak;
-aws dynamodb delete-table --table-name JackrabbitOak-Journal;
-aws dynamodb delete-table --table-name JackrabbitOak-Lock;
+mysql --login-path=qoakus -e "drop database oak";
+mysql --login-path=qoakus -e "create database oak DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
 curl -X DELETE https://search-qoakus-XXXXXXXXXXXXXXXX.us-west-1.es.amazonaws.com/oak-elastic*;
 ```
 
