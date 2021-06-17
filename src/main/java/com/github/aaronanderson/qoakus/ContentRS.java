@@ -5,6 +5,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.time.ZoneId;
@@ -56,6 +57,10 @@ import javax.ws.rs.core.StreamingOutput;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.api.JackrabbitSession;
+import org.apache.jackrabbit.api.JackrabbitValueFactory;
+import org.apache.jackrabbit.api.binary.BinaryDownload;
+import org.apache.jackrabbit.api.binary.BinaryDownloadOptions;
+import org.apache.jackrabbit.api.binary.BinaryUpload;
 import org.apache.jackrabbit.api.security.user.Group;
 import org.apache.jackrabbit.api.security.user.UserManager;
 import org.apache.jackrabbit.commons.jackrabbit.authorization.AccessControlUtils;
@@ -271,7 +276,23 @@ public class ContentRS {
                 Node ntFile = node.getNode(fileName);
                 Node ntResource = ntFile.getNode(JcrConstants.JCR_CONTENT);
                 String mimeType = ntResource.getProperty(JcrConstants.JCR_MIMETYPE).getString();
+                String encoding = ntResource.hasProperty(JcrConstants.JCR_ENCODING) ? ntResource.getProperty(JcrConstants.JCR_ENCODING).getString() : null;
                 Binary binary = ntResource.getProperty(JcrConstants.JCR_DATA).getBinary();
+                if (binary instanceof BinaryDownload) {
+                    BinaryDownload binaryDownload = (BinaryDownload) binary;
+
+                    BinaryDownloadOptions.BinaryDownloadOptionsBuilder builder = BinaryDownloadOptions.builder()
+                            .withFileName(ntFile.getName())
+                            .withMediaType(mimeType);
+                    if (encoding != null) {
+                        builder.withCharacterEncoding(encoding);
+                    }
+                    builder.withDispositionTypeAttachment();
+                    URI uri = binaryDownload.getURI(builder.build());
+                    if (uri != null) {
+                        return Response.temporaryRedirect(uri).build();
+                    }
+                }
                 ResponseBuilder response = Response.status(Response.Status.OK);
                 response.header("Content-Disposition", "attachment;filename=\"" + fileName + "\"");
                 // https://stackoverflow.com/a/49286437
@@ -286,6 +307,34 @@ public class ContentRS {
         } catch (Exception e) {
             logger.error("", e);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(String.format("Content %s file %s retrieval error: %s", contentPath, fileName, e.getMessage())).build();
+        }
+    }
+
+    @GET
+    @Path("/upload{contentPath:.*}")
+    public Response fileUpload(@PathParam("contentPath") String contentPath, @QueryParam("token") String token) {
+        try {
+            JsonObjectBuilder result = Json.createObjectBuilder();
+            Session session = getSession(contentPath);
+            ValueFactory vf = session.getValueFactory();
+            JackrabbitValueFactory valueFactory = (JackrabbitValueFactory) vf;
+            if (token != null) {
+                valueFactory.completeBinaryUpload(token);
+            } else {
+                BinaryUpload binaryUpload = valueFactory.initiateBinaryUpload(52428800, 1);
+                result.add("token", binaryUpload.getUploadToken());
+                result.add("minPartSize", binaryUpload.getMinPartSize());
+                result.add("maxPartSize", binaryUpload.getMaxPartSize());
+                JsonArrayBuilder uploadURIs = Json.createArrayBuilder();
+                for (URI uri : binaryUpload.getUploadURIs()) {
+                    uploadURIs.add(uri.toString());
+                }
+                result.add("uploadURIs", uploadURIs);
+            }
+            return Response.status(200).entity(result.build()).build();
+        } catch (Exception e) {
+            logger.error("", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(String.format("Content %s token %s upload error: %s", contentPath, token != null ? token : "", e.getMessage())).build();
         }
     }
 
@@ -517,7 +566,7 @@ public class ContentRS {
                         + "        imgTarget.classList.add('embedded-image');"
                         + "        imgTarget.parentNode.insertBefore(document.createElement(\"br\"), imgTarget.nextSibling);"
                         + "        imgSrc.parentNode.removeChild(imgSrc.nextSibling);"
-                        + "        imgSrc.parentNode.removeChild(imgSrc);"      
+                        + "        imgSrc.parentNode.removeChild(imgSrc);"
                         + "      }\n"
                         + "    }\n"
                         + "});";

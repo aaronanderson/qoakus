@@ -35,12 +35,10 @@ public class GuavaFix {
             });
 
             Remapper toStringMapper = new Remapper() {
-
                 @Override
                 public String map(String internalName) {
                     return internalName.replace("com/google/common/base/Objects", "com/google/common/base/MoreObjects");
                 }
-
             };
             fix("org.apache.jackrabbit.oak.cache.AbstractCacheStats", outDir, toStringMapper);
             fix("org.apache.jackrabbit.oak.plugins.blob.StagingCacheStats", outDir, toStringMapper);

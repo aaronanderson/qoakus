@@ -1,7 +1,6 @@
 package com.github.aaronanderson.qoakus;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -80,6 +79,7 @@ import org.apache.jackrabbit.oak.api.ContentSession;
 import org.apache.jackrabbit.oak.api.Root;
 import org.apache.jackrabbit.oak.api.Tree;
 import org.apache.jackrabbit.oak.api.Type;
+import org.apache.jackrabbit.oak.api.blob.BlobAccessProvider;
 import org.apache.jackrabbit.oak.blob.cloud.s3.S3Constants;
 import org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStore;
 import org.apache.jackrabbit.oak.jcr.Jcr;
@@ -151,6 +151,15 @@ public class RepositoryManager {
     @ConfigProperty(name = "qoakus.aws.s3-bucket")
     Optional<String> bucketName;
 
+    @ConfigProperty(name = "qoakus.aws.s3-upload-expiry", defaultValue = "0")
+    String presignUploadExpiry;
+
+    @ConfigProperty(name = "qoakus.aws.s3-download-expiry", defaultValue = "0")
+    String presignDownloadExpiry;
+
+    @ConfigProperty(name = "qoakus.aws.s3-download-verify", defaultValue = "false")
+    String presignDownloadVerify;
+
     @ConfigProperty(name = "qoakus.aws.filestore-path")
     Optional<String> fileStorePath;
 
@@ -185,7 +194,6 @@ public class RepositoryManager {
     }
 
     private Oak createOak() throws IOException, DataStoreException {
-        NodeStore nodeStore = null;
         if (region.isPresent() && bucketName.isPresent() && oakDataSource.isResolvable()) {
             logger.infof("Configuring AWS persistence");
 
@@ -207,19 +215,26 @@ public class RepositoryManager {
             props.setProperty(S3Constants.S3_MAX_CONNS, "10");
             props.setProperty(S3Constants.S3_MAX_ERR_RETRY, "10");
             props.setProperty(S3Constants.S3_WRITE_THREADS, "10");
-
+            if (!presignUploadExpiry.equals("0")) {
+                props.setProperty(S3Constants.PRESIGNED_HTTP_UPLOAD_URI_EXPIRY_SECONDS, presignUploadExpiry);
+            }
+            if (!presignDownloadExpiry.equals("0")) {
+                props.setProperty(S3Constants.PRESIGNED_HTTP_DOWNLOAD_URI_EXPIRY_SECONDS, presignDownloadExpiry);
+                props.setProperty(S3Constants.PRESIGNED_HTTP_DOWNLOAD_URI_VERIFY_EXISTS, presignDownloadVerify);
+            }
             s3DataStore.setProperties(props);
             s3DataStore.init(blobStorePath.toAbsolutePath().toString());
 
-            documentStore = RDBDocumentNodeStoreBuilder.newRDBDocumentNodeStoreBuilder().setRDBConnection(oakDataSource.get()).setBlobStore(new DataStoreBlobStore(s3DataStore)).build();
-            nodeStore = documentStore;
+            DataStoreBlobStore blobStore = new DataStoreBlobStore(s3DataStore);
+            documentStore = RDBDocumentNodeStoreBuilder.newRDBDocumentNodeStoreBuilder().setRDBConnection(oakDataSource.get()).setBlobStore(blobStore).build();
+            oak = new Oak(documentStore);
+            oak.getWhiteboard().register(BlobAccessProvider.class, blobStore, Collections.emptyMap());
             logger.infof("Completed configuring AWS persistence");
         } else {
             logger.infof("Configuring in-memory storage");
-            nodeStore = new MemoryNodeStore();
+            oak = new Oak(new MemoryNodeStore());
         }
 
-        oak = new Oak(nodeStore);
         oak.with("qoakus");
         return oak;
     }
